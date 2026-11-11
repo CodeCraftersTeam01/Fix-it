@@ -1,90 +1,76 @@
 import React from "react";
-import { X, Settings2, Maximize2 } from "lucide-react";
+import { X, Maximize2, Settings } from "lucide-react";
 
 interface HeaderBarProps {
   onClose?: () => void;
   onOpenSettings?: () => void;
   onExpand?: () => void;
+  onStartDrag?: (e: React.MouseEvent) => void;
   greeting?: string;
-  isAgentActive?: boolean;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
   onClose,
   onOpenSettings,
   onExpand,
+  onStartDrag,
   greeting,
-  isAgentActive = true,
 }) => {
-  const getGreeting = () => {
-    if (greeting) return greeting;
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning.";
-    if (hour < 18) return "Good afternoon.";
-    return "Good evening.";
-  };
-
   return (
-    <div className="flex items-center justify-between px-4 pt-3.5 pb-2 select-none z-50 relative">
-      {/* Close button with onMouseDown and onClick propagation stopped */}
+    <div
+      data-tauri-drag-region
+      onMouseDown={onStartDrag}
+      className="flex items-center justify-between px-4 pt-4 pb-1 select-none z-30 cursor-grab active:cursor-grabbing"
+    >
+      {/* Top Left Close Button */}
       <button
         type="button"
-        onMouseDown={(e) => {
-          e.stopPropagation();
-        }}
+        onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
-          e.preventDefault();
           onClose?.();
         }}
         aria-label="Close"
         title="Tutup FixIt"
-        className="w-8 h-8 rounded-full bg-white/10 hover:bg-rose-500/80 active:scale-90 flex items-center justify-center text-white/80 hover:text-white transition cursor-pointer z-50 pointer-events-auto"
+        className="w-9 h-9 rounded-full apple-pill-btn flex items-center justify-center text-white/85 hover:text-white transition cursor-pointer"
       >
-        <X size={15} />
+        <X size={16} strokeWidth={2.2} />
       </button>
 
-      {/* Drag region - strictly inside the center greeting text only */}
+      {/* Middle Drag Spacer */}
       <div
         data-tauri-drag-region
-        className="flex-1 flex items-center justify-center gap-1.5 py-1 px-3 cursor-grab active:cursor-grabbing mx-2"
+        className="flex-1 h-9 mx-2 flex items-center justify-center text-xs text-white/40 pointer-events-none"
       >
-        {isAgentActive && (
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse pointer-events-none" />
-        )}
-        <span className="text-xs font-medium text-white/75 tracking-wide pointer-events-none select-none">
-          {getGreeting()}
-        </span>
+        {greeting && <span>{greeting}</span>}
       </div>
 
-      {/* Settings & Expand buttons */}
-      <div className="flex items-center gap-1.5 z-50">
+      {/* Top Right Expand & Settings */}
+      <div className="flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
         <button
           type="button"
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onOpenSettings?.();
           }}
           aria-label="Settings"
-          title="Pengaturan AI & Proyek"
-          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white/80 hover:text-white transition cursor-pointer z-50 pointer-events-auto"
+          title="Pengaturan"
+          className="w-9 h-9 rounded-full apple-pill-btn flex items-center justify-center text-white/70 hover:text-white transition cursor-pointer"
         >
-          <Settings2 size={14} />
+          <Settings size={15} strokeWidth={2} />
         </button>
 
         <button
           type="button"
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onExpand?.();
           }}
           aria-label="Expand"
-          title="Perbesar / Perkecil"
-          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white/80 hover:text-white transition cursor-pointer z-50 pointer-events-auto"
+          title="Perbesar"
+          className="w-9 h-9 rounded-full apple-pill-btn flex items-center justify-center text-white/85 hover:text-white transition cursor-pointer"
         >
-          <Maximize2 size={13} />
+          <Maximize2 size={14} strokeWidth={2.2} />
         </button>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { HeaderBar } from "../HeaderBar";
 
 describe("HeaderBar", () => {
-  it("renders custom greeting correctly", () => {
+  it("renders custom greeting correctly when passed", () => {
     render(<HeaderBar greeting="Hello FixIt" />);
     expect(screen.getByText("Hello FixIt")).toBeTruthy();
   });
@@ -24,4 +24,3 @@ describe("HeaderBar", () => {
     expect(handleExpand).toHaveBeenCalledTimes(1);
   });
 });
-

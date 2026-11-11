@@ -4,7 +4,6 @@ import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
 import { SettingsModal, AppSettings } from "./SettingsModal";
 import { CodeError, FixExplanation, ChatMessage } from "../types";
-import { Sparkles, Bot, FolderCode, ArrowRight, RefreshCw } from "lucide-react";
 
 interface FloatingHudProps {
   currentError?: CodeError | null;
@@ -12,6 +11,7 @@ interface FloatingHudProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
   onClose: () => void;
+  onExpand?: () => void;
   onSimulateError: () => void;
   onClearError: () => void;
   isLoading?: boolean;
@@ -25,6 +25,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   messages,
   onSendMessage,
   onClose,
+  onExpand,
   onSimulateError,
   onClearError,
   isLoading = false,
@@ -40,12 +41,42 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }
   }, [messages, explanation, currentError]);
 
+  const handleStartDrag = async (e: React.MouseEvent) => {
+    // Only drag on left click and not on interactive buttons/inputs
+    if (e.button === 0) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("start_dragging");
+      } catch {
+        try {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          await getCurrentWindow().startDragging();
+        } catch {
+          // In standard browser
+        }
+      }
+    }
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning.";
+    if (hour < 18) return "Good afternoon.";
+    return "Good evening.";
+  };
+
   return (
-    <div className="w-full h-full rounded-[28px] hud-glass flex flex-col overflow-hidden shadow-2xl relative border border-white/10 select-none">
-      {/* Header */}
+    <div
+      onMouseDown={handleStartDrag}
+      data-tauri-drag-region
+      className="w-full h-full rounded-[34px] apple-hud-glass flex flex-col overflow-hidden relative select-none cursor-grab active:cursor-grabbing"
+    >
+      {/* Top Header Buttons */}
       <HeaderBar
         onClose={onClose}
+        onExpand={onExpand}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onStartDrag={handleStartDrag}
       />
 
       {/* Settings Modal */}
@@ -56,79 +87,55 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         onSave={onSaveSettings}
       />
 
-      {/* Scrollable Body */}
+      {/* Greeting Title (Exact Apple layout: Left-aligned bold title right below header) */}
+      <div
+        data-tauri-drag-region
+        onMouseDown={handleStartDrag}
+        className="px-6 pt-2 pb-1"
+      >
+        <div className="text-[26px] font-medium text-white tracking-tight pointer-events-none">
+          {getGreeting()}
+        </div>
+      </div>
+
+      {/* Scrollable Content Body */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-2 space-y-3"
+        className="flex-1 overflow-y-auto px-6 py-2 space-y-4 cursor-default"
+        onMouseDown={(e) => {
+          // If clicked directly on the background (not a child text/button), allow dragging
+          if (e.target === e.currentTarget) {
+            handleStartDrag(e);
+          }
+        }}
       >
         {/* Active Error Guide */}
         {currentError && explanation ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-white/50 px-1">
-              <span className="font-medium text-rose-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                Error Aktif Terdeteksi
-              </span>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-[11px] text-white/40">
+              <span>Error aktif</span>
               <button
                 onClick={onClearError}
-                className="hover:text-white transition flex items-center gap-1 text-[10px]"
+                className="hover:text-white transition text-[11px] underline underline-offset-2"
               >
-                <RefreshCw size={10} />
-                <span>Reset / Standby</span>
+                Kembali standby
               </button>
             </div>
             <ErrorGuideCard error={currentError} explanation={explanation} />
           </div>
         ) : (
-          /* Initial / Standby AI Agent View */
-          <div className="flex flex-col items-center justify-center text-center px-2 py-4 text-white/70 space-y-3.5">
-            <div className="relative">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500/20 to-purple-500/20 border border-white/10 flex items-center justify-center text-sky-400 shadow-inner">
-                <Bot size={28} />
-              </div>
-              <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-black" />
-            </div>
+          /* Clean Standby State - Zero Slop */
+          <div className="space-y-3 pt-1">
+            <p className="text-[13.5px] text-white/50 leading-relaxed font-normal">
+              FixIt memantau folder kodinganmu di latar belakang. Jika terjadi error, langkah perbaikannya akan muncul di sini.
+            </p>
 
-            <div className="space-y-1">
-              <div className="text-sm font-semibold text-white flex items-center justify-center gap-1.5">
-                <span>FixIt AI Agent Aktif</span>
-                <Sparkles size={14} className="text-amber-400" />
-              </div>
-              <p className="text-[11px] text-white/50 max-w-[260px] leading-relaxed mx-auto">
-                Aku otomatis memantau kodinganmu di VS Code, Kiro, atau Antigravity. Saat ada error sintaks atau runtime, panduan perbaikan akan muncul di sini.
-              </p>
-            </div>
-
-            {/* Simulation test button */}
-            <div className="w-full pt-1 space-y-2">
-              <button
-                onClick={onSimulateError}
-                className="w-full py-2.5 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/10 text-left flex items-center justify-between transition group"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
-                    <Sparkles size={14} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-white group-hover:text-sky-300">
-                      Coba Simulasi Error
-                    </div>
-                    <div className="text-[10px] text-white/40">
-                      Lihat cara AI Agent menganalisis kode praktikum
-                    </div>
-                  </div>
-                </div>
-                <ArrowRight size={13} className="text-white/40 group-hover:text-sky-400" />
-              </button>
-
-              {/* Watched folder status */}
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-[10px] text-white/50 text-left font-mono">
-                <FolderCode size={12} className="text-purple-400 shrink-0" />
-                <span className="truncate">
-                  {settings.watched_paths[0] || "Memantau workspace aktif"}
-                </span>
-              </div>
-            </div>
+            <button
+              onClick={onSimulateError}
+              className="text-[12px] text-white/40 hover:text-white/80 transition underline underline-offset-4"
+            >
+              Simulasikan deteksi error
+            </button>
           </div>
         )}
 
@@ -141,10 +148,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             }`}
           >
             <div
-              className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-relaxed ${
+              className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed ${
                 msg.sender === "user"
-                  ? "bg-sky-500 text-white rounded-br-sm shadow-md"
-                  : "bg-white/10 text-white/90 rounded-bl-sm border border-white/5"
+                  ? "bg-white/20 text-white rounded-br-sm"
+                  : "bg-white/[0.08] text-white/90 rounded-bl-sm"
               }`}
             >
               {msg.text}
@@ -154,18 +161,17 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
         {/* Loading state */}
         {isLoading && (
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-white/5 text-xs text-white/60 animate-pulse">
-            <div className="w-2 h-2 rounded-full bg-sky-400 animate-ping"></div>
-            <span>FixIt AI sedang menganalisis...</span>
+          <div className="text-[12px] text-white/40 animate-pulse">
+            Menganalisis...
           </div>
         )}
       </div>
 
-      {/* Footer Chat Input */}
+      {/* Bottom Capsule Bar (Exact match to "Ask Siri" pill in screenshot) */}
       <AskBar
         onSendMessage={onSendMessage}
         disabled={isLoading}
-        placeholder="Tanya FixIt apa saja..."
+        placeholder="Ask FixIt"
       />
     </div>
   );

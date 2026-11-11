@@ -66,6 +66,21 @@ export function App() {
     }
   };
 
+  const handleExpand = async () => {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const appWindow = getCurrentWindow();
+      const isMax = await appWindow.isMaximized();
+      if (isMax) {
+        await appWindow.unmaximize();
+      } else {
+        await appWindow.maximize();
+      }
+    } catch (err) {
+      console.log("HUD expand error", err);
+    }
+  };
+
   const handleSaveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
     try {
@@ -100,7 +115,7 @@ export function App() {
       });
 
       setIsLoading(false);
-    }, 600);
+    }, 400);
   };
 
   const handleClearError = () => {
@@ -132,19 +147,18 @@ export function App() {
       ]);
       setIsLoading(false);
     } catch {
-      // Fallback response for demonstration
       setTimeout(() => {
-        let replyText = "Halo! Aku FixIt AI Agent. ";
+        let replyText = "Halo! ";
         const lower = text.toLowerCase();
         if (lower.includes("cara kerja") || lower.includes("gimana")) {
           replyText +=
-            "Aku memantau folder kodinganmu di latar belakang. Saat kamu berhenti mengetik (jeda ~2.5s) dan ada error sintaks atau runtime, aku akan otomatis memunculkan notifikasi dan langkah perbaikannya.";
+            "FixIt memantau folder kodinganmu secara pasif. Saat kamu berhenti mengetik (jeda ~2.5s) dan ada error, FixIt akan memunculkan penjelasan dan langkah solusinya di sini.";
         } else if (lower.includes("error") || lower.includes("fix")) {
           replyText +=
-            "Jika ada error di kodinganmu, cukup simpan berkas di IDE (Cmd + S). Aku akan mendeteksi baris dan jenis errornya untuk memandu langkah penyelesaiannya.";
+            "Jika ada kode yang error, simpan berkas di editor (Cmd + S). FixIt akan mendeteksi barisnya dan menyajikan checklist perbaikan.";
         } else {
           replyText +=
-            "Ada yang bisa aku bantu untuk praktikum kodingmu hari ini?";
+            "Ada yang ingin kamu tanyakan seputar kode praktikummu?";
         }
 
         setMessages((prev) => [
@@ -157,7 +171,7 @@ export function App() {
           },
         ]);
         setIsLoading(false);
-      }, 500);
+      }, 400);
     }
   };
 
@@ -168,6 +182,7 @@ export function App() {
       messages={messages}
       onSendMessage={handleSendMessage}
       onClose={handleClose}
+      onExpand={handleExpand}
       onSimulateError={handleSimulateError}
       onClearError={handleClearError}
       isLoading={isLoading}

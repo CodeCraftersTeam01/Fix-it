@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, HelpCircle, CheckSquare, Square, Code, FileText } from "lucide-react";
+import { Check, Code2 } from "lucide-react";
 import { CodeError, FixExplanation } from "../types";
 
 interface ErrorGuideCardProps {
@@ -23,66 +23,56 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
   const fileName = error.file_path.split("/").pop() || error.file_path;
 
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-2xl hud-card text-sm text-gray-200">
-      {/* File & Line Badge */}
-      <div className="flex items-center justify-between pb-2 border-b border-white/10 text-xs text-white/60">
-        <div className="flex items-center gap-1.5 font-mono text-sky-400">
-          <FileText size={14} />
-          <span>{fileName}</span>
-          {error.line_number && (
-            <span className="bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded text-[10px]">
-              Line {error.line_number}
-            </span>
-          )}
-        </div>
+    <div className="space-y-4 text-white/90">
+      {/* File & Line Subtitle */}
+      <div className="flex items-center gap-2 text-[12px] font-mono text-white/40 border-b border-white/[0.07] pb-2">
+        <span>{fileName}</span>
+        {error.line_number && (
+          <span className="text-white/60">Line {error.line_number}</span>
+        )}
         {error.project_name && (
-          <span className="text-[11px] text-white/40">{error.project_name}</span>
+          <span className="ml-auto text-[11px] text-white/30">{error.project_name}</span>
         )}
       </div>
 
-      {/* 1. Summary */}
-      <div className="flex items-start gap-2 text-rose-300">
-        <AlertCircle size={16} className="mt-0.5 shrink-0 text-rose-400" />
-        <div className="font-medium text-xs leading-relaxed">
-          {explanation.summary || error.raw_message}
-        </div>
+      {/* 1. Problem Statement */}
+      <div className="text-[14px] font-medium text-rose-300/95 leading-snug">
+        {explanation.summary || error.raw_message}
       </div>
 
-      {/* 2. Why it happened (Educational concept) */}
-      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300/90">
-          <HelpCircle size={13} />
-          <span>Kenapa error ini terjadi?</span>
-        </div>
-        <p className="text-xs text-white/70 leading-relaxed">
-          {explanation.why_it_happened}
-        </p>
+      {/* 2. Educational Concept */}
+      <div className="text-[13px] text-white/70 font-normal leading-relaxed">
+        {explanation.why_it_happened}
       </div>
 
-      {/* 3. Step-by-step checklist */}
+      {/* 3. Steps Checklist */}
       {explanation.steps && explanation.steps.length > 0 && (
-        <div className="space-y-1.5 pt-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-white/40">
+        <div className="space-y-2 pt-1">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-white/40">
             Langkah Penyelesaian
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {explanation.steps.map((step, idx) => {
               const isChecked = !!completedSteps[idx];
               return (
                 <button
                   key={idx}
                   onClick={() => toggleStep(idx)}
-                  className={`w-full text-left flex items-start gap-2 p-2 rounded-lg transition text-xs ${
+                  className={`w-full text-left flex items-start gap-2.5 p-2 rounded-xl transition text-[12.5px] ${
                     isChecked
-                      ? "bg-emerald-500/10 text-white/40 line-through"
-                      : "bg-white/[0.02] hover:bg-white/[0.05] text-white/80"
+                      ? "text-white/30 line-through bg-transparent"
+                      : "text-white/85 bg-white/[0.04] hover:bg-white/[0.08]"
                   }`}
                 >
-                  {isChecked ? (
-                    <CheckSquare size={14} className="mt-0.5 shrink-0 text-emerald-400" />
-                  ) : (
-                    <Square size={14} className="mt-0.5 shrink-0 text-white/30" />
-                  )}
+                  <div
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition ${
+                      isChecked
+                        ? "bg-emerald-500/80 border-emerald-500 text-white"
+                        : "border-white/20 bg-white/[0.03]"
+                    }`}
+                  >
+                    {isChecked && <Check size={11} strokeWidth={3} />}
+                  </div>
                   <span className="leading-snug">{step}</span>
                 </button>
               );
@@ -93,12 +83,12 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
 
       {/* 4. Code hint */}
       {explanation.code_hint && (
-        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1 font-mono text-xs">
-          <div className="flex items-center gap-1 text-[10px] text-white/40">
-            <Code size={11} />
-            <span>Rekomendasi Kode:</span>
+        <div className="rounded-xl bg-black/40 border border-white/[0.06] p-3 space-y-1.5">
+          <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-white/40">
+            <Code2 size={12} />
+            <span>Rekomendasi</span>
           </div>
-          <pre className="text-emerald-400 overflow-x-auto text-[11px] leading-relaxed">
+          <pre className="text-emerald-300/90 font-mono text-[11.5px] leading-relaxed overflow-x-auto">
             {explanation.code_hint}
           </pre>
         </div>
@@ -106,4 +96,3 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
     </div>
   );
 };
-

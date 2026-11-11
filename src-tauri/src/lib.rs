@@ -24,6 +24,11 @@ pub mod commands {
     use crate::diagnostics::CodeError;
 
     #[tauri::command]
+    pub async fn start_dragging(window: Window) -> Result<(), String> {
+        window.start_dragging().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
     pub async fn close_window(window: Window) -> Result<(), String> {
         window.close().map_err(|e| e.to_string())
     }
@@ -173,6 +178,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::start_dragging,
             commands::close_window,
             commands::hide_window,
             commands::get_config,
