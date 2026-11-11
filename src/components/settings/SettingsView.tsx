@@ -17,6 +17,7 @@ import {
   Sparkles,
   Zap,
   Radio,
+  AlertCircle,
 } from "lucide-react";
 import { AppSettings, AIProvider, ProviderModel, CustomProvider } from "./types";
 
@@ -140,24 +141,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
   },
 ];
 
-const DETECTABLE_MODELS_POOL = [
-  "agnes-2.5-pro-alpha",
-  "agnes-video-2.5-flash",
-  "agnes-3.0-flash",
-  "agnes-image-2.1-flash",
-  "agnes-video-2.5",
-  "agnes-image-2.0-flash",
-  "agnes-2.5-flash",
-  "agnes-2.5-pro",
-  "agnes-2.5-pro-beta",
-  "agnes-image-2.5-flash",
-  "glm-5.3-flash-free",
-  "deepseek-v3",
-  "claude-3-5-sonnet-20241022",
-  "gpt-4o",
-  "llama-3.3-70b-instruct",
-];
-
 interface SettingsViewProps {
   isWindow?: boolean;
   onClose?: () => void;
@@ -173,7 +156,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<"models" | "folders" | "general" | "about">("models");
   const [providers, setProviders] = useState<AIProvider[]>(INITIAL_PROVIDERS);
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>("ciora");
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [activeModel, setActiveModel] = useState<string>("glm-5.3-flash-free");
   const [newKeyInput, setNewKeyInput] = useState<string>("");
   const [newModelIdInput, setNewModelIdInput] = useState<string>("");
@@ -182,21 +165,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [roundRobin, setRoundRobin] = useState<boolean>(true);
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
 
-  // Modals
+  // Modals & Dynamic Models Fetch
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importSearch, setImportSearch] = useState<string>("");
-  const [selectedImportModels, setSelectedImportModels] = useState<string[]>([
-    "agnes-2.5-pro-alpha",
-    "agnes-video-2.5-flash",
-    "agnes-3.0-flash",
-  ]);
+  const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [dynamicModelsPool, setDynamicModelsPool] = useState<string[]>([]);
+  const [selectedImportModels, setSelectedImportModels] = useState<string[]>([]);
 
   const [showAddProviderModal, setShowAddProviderModal] = useState<boolean>(false);
   const [newProviderName, setNewProviderName] = useState<string>("");
   const [newProviderProtocol, setNewProviderProtocol] = useState<"openai" | "anthropic">("openai");
   const [newProviderBaseUrl, setNewProviderBaseUrl] = useState<string>("https://api.openai.com/v1");
   const [newProviderApiKey, setNewProviderApiKey] = useState<string>("");
-  const [newProviderDefaultModel, setNewProviderDefaultModel] = useState<string>("gpt-4o-mini");
 
   // Watched Folders state
   const [watchedPaths, setWatchedPaths] = useState<string[]>([
@@ -395,13 +376,70 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setCopiedUrl(false), 1500);
   };
 
+  // Delete Custom Provider
+  const handleDeleteProvider = (providerId: string) => {
+    const pToDelete = providers.find((p) => p.id === providerId);
+    if (!pToDelete) return;
+    if (pToDelete.category !== "custom") {
+      alert("Provider default sistem tidak dapat dihapus.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Hapus custom provider "${pToDelete.name}"?\nSemua konfigurasi API key dan model untuk provider ini akan dihapus.`
+    );
+    if (!confirmed) return;
+
+    const updated = providers.filter((p) => p.id !== providerId);
+    setProviders(updated);
+    if (selectedProviderId === providerId) {
+      setSelectedProviderId(null);
+    }
+    handleSaveAll(updated);
+  };
+
+  // Open dynamic import modal and query /models endpoint live
+  const handleOpenImportModal = async () => {
+    if (!selectedProvider) return;
+    setShowImportModal(true);
+    setIsFetchingModels(true);
+    setFetchError(null);
+    setDynamicModelsPool([]);
+    setSelectedImportModels([]);
+    setImportSearch("");
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const models = await invoke<string[]>("fetch_models_from_provider", {
+        baseUrl: selectedProvider.base_url,
+        apiKey: selectedProvider.api_keys[0] || null,
+      });
+      if (models && models.length > 0) {
+        setDynamicModelsPool(models);
+        setSelectedImportModels(models.slice(0, 8));
+      } else {
+        setFetchError("Endpoint /models merespons tetapi tidak ditemukan daftar ID model.");
+      }
+    } catch (err: unknown) {
+      console.error("Gagal import /models:", err);
+      const errMsg =
+        typeof err === "string"
+          ? err
+          : err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Gagal menghubungi endpoint /models provider.";
+      setFetchError(errMsg);
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
   // Confirm Import Models
   const handleConfirmImport = () => {
     if (!selectedProvider) return;
     const modelsToAdd: ProviderModel[] = selectedImportModels.map((m) => ({
       id: m,
       name: m,
-      description: `Model ${m} impor dari ${selectedProvider.name}`,
+      description: `Model ${m} diimpor dari ${selectedProvider.name}`,
     }));
 
     const existingIds = new Set(selectedProvider.available_models.map((m) => m.id));
@@ -412,18 +450,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     });
 
+    const nextActive = selectedProvider.active_model || selectedImportModels[0] || activeModel;
+
     const updated = providers.map((p) => {
       if (p.id === selectedProvider.id) {
-        return { ...p, available_models: merged };
+        return { ...p, available_models: merged, active_model: nextActive };
       }
       return p;
     });
+
+    if (!activeModel || activeModel === "gpt-4o-mini" || !selectedProvider.active_model) {
+      setActiveModel(nextActive);
+    }
+
     setProviders(updated);
     setShowImportModal(false);
-    handleSaveAll(updated);
+    handleSaveAll(updated, nextActive);
   };
 
-  // Add Custom Provider
+  // Add Custom Provider (No default model ID needed; models are imported or added later)
   const handleCreateCustomProvider = () => {
     if (!newProviderName.trim()) return;
     const newId = newProviderName.toLowerCase().replace(/[^a-z0-9]/g, "-");
@@ -434,26 +479,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       protocol: newProviderProtocol,
       base_url: newProviderBaseUrl.trim() || "https://api.openai.com/v1",
       api_keys: newProviderApiKey.trim() ? [newProviderApiKey.trim()] : [],
-      active_model: newProviderDefaultModel.trim() || "gpt-4o-mini",
+      active_model: "",
       badge: "Custom",
       connectionsCount: newProviderApiKey.trim() ? 1 : 0,
-      available_models: [
-        {
-          id: newProviderDefaultModel.trim() || "gpt-4o-mini",
-          name: newProviderDefaultModel.trim() || "gpt-4o-mini",
-          description: `Model utama ${newProviderName.trim()}`,
-        },
-      ],
+      available_models: [],
     };
 
     const updated = [...providers, created];
     setProviders(updated);
     setSelectedProviderId(created.id);
-    setActiveModel(created.active_model);
     setShowAddProviderModal(false);
     setNewProviderName("");
     setNewProviderApiKey("");
-    handleSaveAll(updated, created.active_model);
+    handleSaveAll(updated);
   };
 
   const customProvidersList = providers.filter((p) => p.category === "custom");
@@ -637,14 +675,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
                                 <span>{cp.connectionsCount || cp.api_keys.length} Connected</span>
                                 <span className="px-1.5 py-0.2 rounded bg-white/[0.05] text-[9px] uppercase text-white/50">
-                                  {cp.protocol}
+                                  {cp.protocol} COMPATIBLE
                                 </span>
                               </div>
                             </div>
                           </div>
-                          <button className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.1] text-white/60 group-hover:text-white font-mono shrink-0 transition">
-                            Konfigurasi →
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleDeleteProvider(cp.id)}
+                              className="p-1.5 rounded-lg bg-white/[0.03] hover:bg-red-500/20 text-white/35 hover:text-red-400 transition cursor-pointer"
+                              title={`Hapus ${cp.name}`}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                            <button
+                              onClick={() => setSelectedProviderId(cp.id)}
+                              className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.1] text-white/60 group-hover:text-white font-mono transition cursor-pointer"
+                            >
+                              Konfigurasi →
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -754,6 +804,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         >
                           + ADD API KEY
                         </button>
+                        {selectedProvider.category === "custom" && (
+                          <button
+                            onClick={() => handleDeleteProvider(selectedProvider.id)}
+                            className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-[11px] flex items-center gap-1.5 cursor-pointer transition font-mono border border-red-500/20"
+                            title="Hapus Custom Provider ini"
+                          >
+                            <Trash2 size={12} /> DELETE
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -914,7 +973,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           + ADD
                         </button>
                         <button
-                          onClick={() => setShowImportModal(true)}
+                          onClick={handleOpenImportModal}
                           className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-xs text-white/70 font-mono flex items-center gap-1 cursor-pointer shrink-0"
                         >
                           <ExternalLink size={11} /> IMPORT FROM /MODELS
@@ -1123,13 +1182,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </main>
 
-      {/* Modal Import Model dari Endpoint /models */}
+      {/* Modal Import Model dari Endpoint /models (Dynamic Live Fetch) */}
       {showImportModal && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 select-none">
-          <div className="w-[460px] max-h-[520px] rounded-2xl bg-[#111419] flex flex-col overflow-hidden shadow-2xl">
+          <div className="w-[480px] max-h-[540px] rounded-2xl bg-[#111419] flex flex-col overflow-hidden shadow-2xl border border-white/[0.06]">
             <div className="px-5 py-4 border-b border-white/[0.04] flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-mono font-medium text-white/90">
-                <ExternalLink size={14} /> IMPOR MODEL DARI ENDPOINT /MODELS
+              <div>
+                <div className="flex items-center gap-2 text-xs font-mono font-medium text-white/90">
+                  <ExternalLink size={14} /> IMPOR MODEL DARI ENDPOINT /MODELS
+                </div>
+                <div className="text-[10px] font-mono text-white/35 mt-0.5 truncate max-w-sm">
+                  {selectedProvider?.base_url}/models
+                </div>
               </div>
               <button
                 onClick={() => setShowImportModal(false)}
@@ -1140,65 +1204,103 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div className="p-5 space-y-3 flex-1 overflow-y-auto">
-              <div className="text-[11px] text-white/45">
-                Pilih model yang ingin diimpor ke dalam daftar aktif FixIt dari endpoint provider ini:
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex-1 min-w-[160px] flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 text-xs">
-                  <Search size={12} className="text-white/30" />
-                  <input
-                    type="text"
-                    placeholder="Filter model yang terdeteksi..."
-                    value={importSearch}
-                    onChange={(e) => setImportSearch(e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-white/80 text-xs font-mono placeholder:text-white/25"
-                  />
+              {isFetchingModels ? (
+                <div className="py-14 flex flex-col items-center justify-center space-y-3 text-center">
+                  <RefreshCw size={24} className="animate-spin text-sky-400" />
+                  <div className="text-xs font-mono text-white/85">Mengambil daftar model langsung dari endpoint...</div>
+                  <div className="text-[10px] text-white/40 font-mono max-w-xs break-all">
+                    GET {selectedProvider?.base_url}/models
+                  </div>
                 </div>
-                <button
-                  onClick={() => setSelectedImportModels([...DETECTABLE_MODELS_POOL])}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10px] font-mono text-white/70 cursor-pointer"
-                >
-                  PILIH SEMUA
-                </button>
-                <button
-                  onClick={() => setSelectedImportModels([])}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10px] font-mono text-white/70 cursor-pointer"
-                >
-                  BATAL SEMUA
-                </button>
-              </div>
+              ) : fetchError ? (
+                <div className="py-8 flex flex-col items-center justify-center space-y-3 text-center px-2">
+                  <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                    <AlertCircle size={20} />
+                  </div>
+                  <div className="text-xs font-medium text-red-300">Gagal Mengambil Model dari Endpoint</div>
+                  <div className="text-[11px] text-white/45 max-w-md leading-relaxed break-words font-mono bg-black/40 p-3 rounded-xl border border-white/[0.04] text-left">
+                    {fetchError}
+                  </div>
+                  <button
+                    onClick={handleOpenImportModal}
+                    className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-mono text-white flex items-center gap-1.5 cursor-pointer transition mt-2"
+                  >
+                    <RefreshCw size={12} /> Coba Hubungi Lagi
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="text-[11px] text-white/45 flex items-center justify-between">
+                    <span>Pilih model yang ingin diimpor ke dalam daftar aktif FixIt:</span>
+                    <span className="font-mono text-white/60 text-[10px]">
+                      {dynamicModelsPool.length} model ditemukan
+                    </span>
+                  </div>
 
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pt-2">
-                {DETECTABLE_MODELS_POOL.filter((m) =>
-                  m.toLowerCase().includes(importSearch.toLowerCase())
-                ).map((modelId) => {
-                  const isChecked = selectedImportModels.includes(modelId);
-                  return (
-                    <label
-                      key={modelId}
-                      className="flex items-center justify-between p-2 rounded-xl bg-black/25 hover:bg-black/40 cursor-pointer text-xs transition"
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex-1 min-w-[160px] flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 text-xs">
+                      <Search size={12} className="text-white/30" />
+                      <input
+                        type="text"
+                        placeholder="Filter model yang terdeteksi..."
+                        value={importSearch}
+                        onChange={(e) => setImportSearch(e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-white/80 text-xs font-mono placeholder:text-white/25"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setSelectedImportModels([...dynamicModelsPool])}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10px] font-mono text-white/70 cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 font-mono text-[11px] text-white/80">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedImportModels([...selectedImportModels, modelId]);
-                            } else {
-                              setSelectedImportModels(selectedImportModels.filter((id) => id !== modelId));
-                            }
-                          }}
-                          className="rounded border-none bg-black/40"
-                        />
-                        <span>{modelId}</span>
+                      PILIH SEMUA
+                    </button>
+                    <button
+                      onClick={() => setSelectedImportModels([])}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10px] font-mono text-white/70 cursor-pointer"
+                    >
+                      BATAL SEMUA
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto pt-2">
+                    {dynamicModelsPool
+                      .filter((m) => m.toLowerCase().includes(importSearch.toLowerCase()))
+                      .map((modelId) => {
+                        const isChecked = selectedImportModels.includes(modelId);
+                        return (
+                          <label
+                            key={modelId}
+                            className="flex items-center justify-between p-2 rounded-xl bg-black/25 hover:bg-black/40 cursor-pointer text-xs transition"
+                          >
+                            <div className="flex items-center gap-2 font-mono text-[11px] text-white/80 truncate pr-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedImportModels([...selectedImportModels, modelId]);
+                                  } else {
+                                    setSelectedImportModels(
+                                      selectedImportModels.filter((id) => id !== modelId)
+                                    );
+                                  }
+                                }}
+                                className="rounded border-none bg-black/40"
+                              />
+                              <span className="truncate">{modelId}</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-white/30 shrink-0">live</span>
+                          </label>
+                        );
+                      })}
+                    {dynamicModelsPool.length === 0 && (
+                      <div className="text-center py-6 text-white/30 text-xs font-mono">
+                        Tidak ada model yang ditemukan dalam respon /models.
                       </div>
-                      <span className="text-[10px] font-mono text-white/30">custom</span>
-                    </label>
-                  );
-                })}
-              </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="px-5 py-3 border-t border-white/[0.04] flex items-center justify-end gap-2 bg-white/[0.01]">
@@ -1210,19 +1312,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
               <button
                 onClick={handleConfirmImport}
-                className="px-4 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs text-white font-medium font-mono flex items-center gap-1.5 cursor-pointer"
+                disabled={selectedImportModels.length === 0}
+                className={`px-4 py-1.5 rounded-xl text-xs font-medium font-mono flex items-center gap-1.5 transition ${
+                  selectedImportModels.length > 0
+                    ? "bg-white/15 hover:bg-white/25 text-white cursor-pointer"
+                    : "bg-white/[0.04] text-white/30 cursor-not-allowed"
+                }`}
               >
-                <Check size={12} /> IMPOR MODEL TERPILIH
+                <Check size={12} /> IMPOR {selectedImportModels.length} MODEL TERPILIH
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Tambah Custom Provider */}
+      {/* Modal Tambah Custom Provider (Tanpa input default model karena diimpor via /models) */}
       {showAddProviderModal && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 select-none">
-          <div className="w-[460px] rounded-2xl bg-[#111419] flex flex-col overflow-hidden shadow-2xl">
+          <div className="w-[460px] rounded-2xl bg-[#111419] flex flex-col overflow-hidden shadow-2xl border border-white/[0.06]">
             <div className="px-5 py-4 border-b border-white/[0.04] flex items-center justify-between">
               <div className="text-xs font-mono font-medium text-white/90 flex items-center gap-2">
                 <Plus size={14} /> TAMBAH CUSTOM PROVIDER
@@ -1297,15 +1404,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] font-mono text-white/45">DEFAULT MODEL ID</label>
-                <input
-                  type="text"
-                  placeholder="gpt-4o-mini / llama-3.3-70b"
-                  value={newProviderDefaultModel}
-                  onChange={(e) => setNewProviderDefaultModel(e.target.value)}
-                  className="w-full bg-black/40 rounded-xl px-3.5 py-2 font-mono text-white/80 focus:outline-none"
-                />
+              <div className="text-[11px] text-white/40 font-mono bg-white/[0.02] p-2.5 rounded-xl border border-white/[0.04] leading-relaxed">
+                💡 Model dapat langsung diimpor otomatis dari endpoint <span className="text-sky-400">/models</span> setelah provider disimpan.
               </div>
             </div>
 

@@ -80,6 +80,96 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn fetch_models_from_provider(
+        base_url: String,
+        api_key: Option<String>,
+    ) -> Result<Vec<String>, String> {
+        let clean_url = base_url.trim().trim_end_matches('/');
+        let models_endpoint = if clean_url.ends_with("/models") {
+            clean_url.to_string()
+        } else {
+            format!("{}/models", clean_url)
+        };
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(12))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let mut req = client.get(&models_endpoint);
+
+        if let Some(key) = api_key {
+            let trimmed_key = key.trim();
+            if !trimmed_key.is_empty() {
+                req = req.header("Authorization", format!("Bearer {}", trimmed_key));
+            }
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Koneksi gagal ke {}: {}", models_endpoint, e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Server mengembalikan status HTTP {}: {}",
+                resp.status(),
+                resp.status().canonical_reason().unwrap_or("Error")
+            ));
+        }
+
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Format JSON tidak valid: {}", e))?;
+
+        let mut model_ids: Vec<String> = Vec::new();
+
+        // 1. OpenAI format: { "data": [ { "id": "..." } ] }
+        if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
+            for item in data {
+                if let Some(id) = item.get("id").and_then(|id| id.as_str()) {
+                    model_ids.push(id.to_string());
+                } else if let Some(s) = item.as_str() {
+                    model_ids.push(s.to_string());
+                }
+            }
+        }
+        // 2. Ollama / alternative format: { "models": [ { "name": "..." } or { "id": "..." } ] }
+        else if let Some(models) = json.get("models").and_then(|m| m.as_array()) {
+            for item in models {
+                if let Some(id) = item.get("id").and_then(|id| id.as_str()) {
+                    model_ids.push(id.to_string());
+                } else if let Some(name) = item.get("name").and_then(|name| name.as_str()) {
+                    model_ids.push(name.to_string());
+                } else if let Some(s) = item.as_str() {
+                    model_ids.push(s.to_string());
+                }
+            }
+        }
+        // 3. Array at root: [ { "id": "..." }, ... ] or [ "gpt-4o", ... ]
+        else if let Some(arr) = json.as_array() {
+            for item in arr {
+                if let Some(id) = item.get("id").and_then(|id| id.as_str()) {
+                    model_ids.push(id.to_string());
+                } else if let Some(s) = item.as_str() {
+                    model_ids.push(s.to_string());
+                }
+            }
+        }
+
+        // Deduplicate and sort
+        model_ids.sort();
+        model_ids.dedup();
+
+        if model_ids.is_empty() {
+            return Err("Tidak ada model yang ditemukan dalam respon /models.".to_string());
+        }
+
+        Ok(model_ids)
+    }
+
+    #[tauri::command]
     pub async fn get_config(state: tauri::State<'_, AppState>) -> Result<AppConfig, String> {
         let conf = state.config.lock().await;
         Ok(conf.clone())
@@ -378,7 +468,8 @@ pub fn run() {
             commands::save_config,
             commands::analyze_code_error,
             commands::ask_followup,
-            commands::discover_ide_workspaces
+            commands::discover_ide_workspaces,
+            commands::fetch_models_from_provider
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
