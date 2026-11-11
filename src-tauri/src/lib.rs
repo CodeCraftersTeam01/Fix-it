@@ -450,7 +450,158 @@ fn detect_active_ide() -> String {
     "Antigravity / VS Code".to_string()
 }
 
-pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
+#[derive(Clone)]
+pub struct DebounceCache {
+    entries: std::collections::HashMap<(String, Option<usize>), std::time::Instant>,
+    window: std::time::Duration,
+}
+
+impl DebounceCache {
+    pub fn new(window_ms: u64) -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+            window: std::time::Duration::from_millis(window_ms),
+        }
+    }
+
+    pub fn check_and_record(&mut self, file_path: &str, line_number: Option<usize>) -> bool {
+        let now = std::time::Instant::now();
+        // Prune entries older than 10s to prevent unbounded memory growth
+        self.entries
+            .retain(|_, time| now.duration_since(*time) < std::time::Duration::from_secs(10));
+
+        let key = (file_path.to_string(), line_number);
+        if let Some(last_time) = self.entries.get(&key) {
+            if now.duration_since(*last_time) < self.window {
+                return false;
+            }
+        }
+        self.entries.insert(key, now);
+        true
+    }
+}
+
+pub fn crash_info_to_code_error(
+    crash_info: &runtime_parser::RuntimeCrashInfo,
+) -> diagnostics::CodeError {
+    let line_number = if crash_info.line_number > 0 {
+        Some(crash_info.line_number as usize)
+    } else {
+        None
+    };
+
+    let p = std::path::Path::new(&crash_info.file_path);
+    let snippet = crash_info
+        .snippet
+        .clone()
+        .or_else(|| diagnostics::DiagnosticsParser::extract_snippet(p, line_number));
+
+    let project_name = p
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .map(|parent| parent.to_string_lossy().to_string());
+
+    diagnostics::CodeError {
+        file_path: crash_info.file_path.clone(),
+        line_number,
+        error_type: crash_info.error_type.clone(),
+        raw_message: crash_info.message.clone(),
+        snippet,
+        project_name,
+    }
+}
+
+pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics::CodeError) {
+    let p = std::path::Path::new(&err.file_path);
+    let file_name = p
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| "kode".to_string());
+
+    if err.project_name.is_none() {
+        let project = p
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .map(|parent| parent.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Workspace".to_string());
+        err.project_name = Some(project);
+    }
+
+    let editor = detect_active_ide();
+    let line_str = err
+        .line_number
+        .map(|l| format!(" di baris {}", l))
+        .unwrap_or_default();
+    let notif_body = format!(
+        "Ditemukan {}{} pada berkas {}",
+        err.error_type, line_str, file_name
+    );
+
+    let _ = app_handle
+        .notification()
+        .builder()
+        .title("FixIt: Ada Error Terdeteksi")
+        .body(&notif_body)
+        .show();
+
+    // Emit analyzing/thinking status immediately to the HUD
+    let _ = app_handle.emit(
+        "fixit-error-analyzing",
+        serde_json::json!({
+            "file_name": file_name,
+            "editor": editor,
+            "line": err.line_number,
+            "error_type": err.error_type,
+            "file_path": err.file_path,
+        }),
+    );
+
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+
+    let state: tauri::State<AppState> = app_handle.state();
+    let conf = state.config.lock().await;
+    let explanation = match AiClient::analyze_error(&err, &conf).await {
+        Ok(exp) => exp,
+        Err(e) => {
+            eprintln!("FixIt AI Analysis Error: {}", e);
+            FixExplanation {
+                summary: format!(
+                    "Terdeteksi {} pada baris {:?}",
+                    err.error_type,
+                    err.line_number.unwrap_or(0)
+                ),
+                why_it_happened: format!("Pesan error runtime/interpreter: {}", err.raw_message),
+                steps: vec![
+                    "Periksa baris kode dan fungsi yang dipanggil.".to_string(),
+                    "Pastikan tipe data, nama metode, atau query database sudah benar.".to_string(),
+                    "Simpan kembali berkas dan muat ulang halaman.".to_string(),
+                ],
+                code_hint: err.snippet.clone(),
+            }
+        }
+    };
+
+    let _ = app_handle.emit(
+        "fixit-error-detected",
+        serde_json::json!({
+            "error": err,
+            "explanation": explanation
+        }),
+    );
+
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.show();
+    }
+}
+
+pub fn setup_background_service(
+    app: &AppHandle,
+    config: &AppConfig,
+    debounce_cache: Arc<std::sync::Mutex<DebounceCache>>,
+) {
     let app_handle = app.clone();
     let idle_ms = config.idle_delay_ms;
     let paths: Vec<PathBuf> = config.watched_paths.iter().map(PathBuf::from).collect();
@@ -462,6 +613,11 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
     let watcher = SmartIdleWatcher::new(idle_ms);
     let app_for_writing = app_handle.clone();
     let app_for_idle = app_handle.clone();
+    let app_for_log = app_handle.clone();
+
+    let log_tailer = Arc::new(std::sync::Mutex::new(runtime_log_watcher::LogTailer::new()));
+    let debounce_for_log = Arc::clone(&debounce_cache);
+    let watched_paths_clone = paths.clone();
 
     let _ = watcher.watch_paths(
         paths,
@@ -509,58 +665,7 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
 
                 if let Some(mut err) = DiagnosticsParser::inspect_file(&changed_file) {
                     err.project_name = Some(project.clone());
-
-                    let line_str = err.line_number.map(|l| format!(" di baris {}", l)).unwrap_or_default();
-                    let notif_body = format!("Ditemukan {}{} pada berkas {}", err.error_type, line_str, file_name);
-
-                    let _ = app_inner
-                        .notification()
-                        .builder()
-                        .title("FixIt: Ada Error Terdeteksi")
-                        .body(&notif_body)
-                        .show();
-
-                    // Emit analyzing/thinking status immediately to the HUD
-                    let _ = app_inner.emit("fixit-error-analyzing", serde_json::json!({
-                        "file_name": file_name,
-                        "editor": editor,
-                        "line": err.line_number,
-                        "error_type": err.error_type,
-                        "file_path": changed_file.to_string_lossy().to_string(),
-                    }));
-
-                    if let Some(win) = app_inner.get_webview_window("main") {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
-
-                    let state: tauri::State<AppState> = app_inner.state();
-                    let conf = state.config.lock().await;
-                    let explanation = match AiClient::analyze_error(&err, &conf).await {
-                        Ok(exp) => exp,
-                        Err(e) => {
-                            eprintln!("FixIt AI Analysis Error: {}", e);
-                            FixExplanation {
-                                summary: format!("Terdeteksi {} pada baris {:?}", err.error_type, err.line_number.unwrap_or(0)),
-                                why_it_happened: format!("Pesan error interpreter: {}", err.raw_message),
-                                steps: vec![
-                                    "Periksa sintaks pada baris terkait.".to_string(),
-                                    "Pastikan tanda kurung, kutip, atau titik koma sudah sesuai.".to_string(),
-                                    "Simpan kembali berkas (Cmd + S).".to_string(),
-                                ],
-                                code_hint: err.snippet.clone(),
-                            }
-                        }
-                    };
-
-                    let _ = app_inner.emit("fixit-error-detected", serde_json::json!({
-                        "error": err,
-                        "explanation": explanation
-                    }));
-
-                    if let Some(win) = app_inner.get_webview_window("main") {
-                        let _ = win.show();
-                    }
+                    process_and_emit_error(&app_inner, err).await;
                 } else {
                     // Valid syntax after typing paused
                     let _ = app_inner.emit("fixit-file-valid", serde_json::json!({
@@ -573,6 +678,55 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
                     }));
                 }
             });
+        },
+        // 3. Log event callback (Pipeline 1: Universal Log Tailer)
+        move |log_file| {
+            let entries = {
+                if let Ok(mut tailer) = log_tailer.lock() {
+                    tailer.read_new_entries(&log_file).unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
+            };
+
+            if entries.is_empty() {
+                return;
+            }
+
+            // Determine workspace root if log_file is inside one of watched_paths
+            let workspace_root = watched_paths_clone
+                .iter()
+                .find(|w| log_file.starts_with(w))
+                .map(|p| p.to_string_lossy().to_string());
+
+            for entry in entries {
+                if let Some(crash_info) = runtime_parser::parse_runtime_log_entry(
+                    &entry,
+                    workspace_root.as_deref(),
+                ) {
+                    let line_opt = if crash_info.line_number > 0 {
+                        Some(crash_info.line_number as usize)
+                    } else {
+                        None
+                    };
+
+                    let should_process = {
+                        if let Ok(mut debounce) = debounce_for_log.lock() {
+                            debounce.check_and_record(&crash_info.file_path, line_opt)
+                        } else {
+                            false
+                        }
+                    };
+
+                    if should_process {
+                        let code_error = crash_info_to_code_error(&crash_info);
+                        let app_inner = app_for_log.clone();
+                        tauri::async_runtime::spawn(async move {
+                            process_and_emit_error(&app_inner, code_error).await;
+                        });
+                    }
+                }
+            }
         },
     );
 }
@@ -615,6 +769,8 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            let debounce_cache = Arc::new(std::sync::Mutex::new(DebounceCache::new(1500)));
+
             let is_autostart = std::env::args().any(|arg| arg == "--autostart");
             #[cfg(target_os = "macos")]
             {
@@ -647,9 +803,77 @@ pub fn run() {
                 }
             }
             let _ = setup_tray(app.handle());
-            setup_background_service(&app.handle().clone(), &initial_config);
+            setup_background_service(&app.handle().clone(), &initial_config, Arc::clone(&debounce_cache));
+
+            // Pipeline 2: Local Loopback Ingestion on 127.0.0.1:45678
+            let app_for_endpoint = app.handle().clone();
+            let debounce_for_endpoint = Arc::clone(&debounce_cache);
+            runtime_endpoint::start_loopback_reporter(45678, move |crash_info| {
+                let line_opt = if crash_info.line_number > 0 {
+                    Some(crash_info.line_number as usize)
+                } else {
+                    None
+                };
+
+                let should_process = {
+                    if let Ok(mut debounce) = debounce_for_endpoint.lock() {
+                        debounce.check_and_record(&crash_info.file_path, line_opt)
+                    } else {
+                        false
+                    }
+                };
+
+                if should_process {
+                    let code_error = crash_info_to_code_error(&crash_info);
+                    let app_inner = app_for_endpoint.clone();
+                    tauri::async_runtime::spawn(async move {
+                        process_and_emit_error(&app_inner, code_error).await;
+                    });
+                }
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running FixIt application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debounce_cache_window() {
+        let mut debounce = DebounceCache::new(50);
+        assert!(debounce.check_and_record("app/Http/Controllers/TestController.php", Some(42)));
+        // Immediate second call should be debounced
+        assert!(!debounce.check_and_record("app/Http/Controllers/TestController.php", Some(42)));
+        // Different line should not be debounced
+        assert!(debounce.check_and_record("app/Http/Controllers/TestController.php", Some(43)));
+        // Different file should not be debounced
+        assert!(debounce.check_and_record("app/Http/Controllers/OtherController.php", Some(42)));
+
+        // After window expires
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(debounce.check_and_record("app/Http/Controllers/TestController.php", Some(42)));
+    }
+
+    #[test]
+    fn test_crash_info_to_code_error_conversion() {
+        let crash = runtime_parser::RuntimeCrashInfo {
+            error_type: "QueryException".to_string(),
+            message: "SQLSTATE[HY000]: General error: 1 no such table: users".to_string(),
+            file_path: "/var/www/app/Models/User.php".to_string(),
+            line_number: 28,
+            snippet: Some("> 28 | return User::all();".to_string()),
+        };
+
+        let err = crash_info_to_code_error(&crash);
+        assert_eq!(err.file_path, "/var/www/app/Models/User.php");
+        assert_eq!(err.line_number, Some(28));
+        assert_eq!(err.error_type, "QueryException");
+        assert_eq!(err.raw_message, "SQLSTATE[HY000]: General error: 1 no such table: users");
+        assert_eq!(err.snippet, Some("> 28 | return User::all();".to_string()));
+        assert_eq!(err.project_name, Some("Models".to_string()));
+    }
 }

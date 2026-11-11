@@ -60,4 +60,45 @@ describe("FloatingHud standby reset", () => {
 
     expect(onClearError).toHaveBeenCalledTimes(1);
   });
+
+  it("renders backend runtime crash error and AI guide in HUD", () => {
+    const runtimeError = {
+      file_path: "app/Http/Controllers/OrderController.php",
+      line_number: 45,
+      error_type: "QueryException",
+      raw_message: "SQLSTATE[HY000]: General error: 1 no such table: orders",
+      snippet: "> 45 | Order::create($request->all());",
+      project_name: "TokoOnline",
+    };
+
+    const runtimeExplanation = {
+      summary: "Tabel database 'orders' belum dibuat atau belum dimigrasi",
+      why_it_happened: "Model Order mencoba mengakses tabel yang belum ada.",
+      steps: [
+        "Jalankan migrasi database: php artisan migrate",
+        "Periksa apakah file migrasi tabel orders sudah dibuat.",
+      ],
+      code_hint: "php artisan migrate",
+    };
+
+    render(
+      <FloatingHud
+        currentError={runtimeError}
+        explanation={runtimeExplanation}
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("QueryException")).toBeDefined();
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.textContent ===
+          "Tabel database 'orders' belum dibuat atau belum dimigrasi"
+      )
+    ).toBeDefined();
+  });
 });
