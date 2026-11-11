@@ -8,7 +8,7 @@ use config::AppConfig;
 use diagnostics::DiagnosticsParser;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
 use watcher::SmartIdleWatcher;
@@ -22,6 +22,16 @@ pub mod commands {
     use super::*;
     use crate::ai_client::FixExplanation;
     use crate::diagnostics::CodeError;
+
+    #[tauri::command]
+    pub async fn close_window(window: Window) -> Result<(), String> {
+        window.close().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn hide_window(window: Window) -> Result<(), String> {
+        window.hide().map_err(|e| e.to_string())
+    }
 
     #[tauri::command]
     pub async fn get_config(state: tauri::State<'_, AppState>) -> Result<AppConfig, String> {
@@ -163,6 +173,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::close_window,
+            commands::hide_window,
             commands::get_config,
             commands::save_config,
             commands::analyze_code_error,
