@@ -617,7 +617,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* Bottom Status Badge */}
         <div className="pt-3 border-t border-white/[0.04] flex items-center justify-between text-[11px] text-white/35 px-1">
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
             <span>Active Service</span>
           </div>
           <span className="font-mono text-[10px]">v0.1.0</span>
@@ -649,7 +649,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div className="flex items-center gap-2 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
             {saveBanner && (
-              <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-mono transition">
+              <span className="text-[11px] text-white/80 flex items-center gap-1 font-mono transition">
                 <Check size={12} /> Tersimpan
               </span>
             )}
@@ -672,16 +672,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {!selectedProviderId ? (
                 <div className="space-y-6">
                   {/* SELEKSI MODEL AKTIF UTAMA FIXIT */}
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] shadow-xl space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-xl space-y-3.5">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
-                          <Sparkles size={16} />
+                        <div className="w-8 h-8 rounded-xl bg-white/[0.08] text-white/90 flex items-center justify-center shrink-0 border border-white/[0.08]">
+                          <Sparkles size={15} />
                         </div>
                         <div>
                           <div className="text-[12px] font-semibold text-white/95 uppercase tracking-wider font-mono flex items-center gap-2">
                             <span>MODEL AKTIF UTAMA FIXIT</span>
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-sans normal-case">
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/[0.08] text-white/70 border border-white/10 font-mono normal-case">
                               Active Engine
                             </span>
                           </div>
@@ -695,13 +695,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {activeProvider && (
                         <div className="flex items-center gap-2 font-mono text-[11px]">
                           {(activeProvider.connectionsCount ?? activeProvider.api_keys.length) > 0 ? (
-                            <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            <span className="px-2.5 py-1 rounded-full bg-white/[0.05] border border-white/10 text-white/80 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white/70"></span>
                               <span>Siap Digunakan ({activeProvider.name})</span>
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                            <span className="px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-white/40 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white/20"></span>
                               <span>Offline (Butuh API Key di {activeProvider.name})</span>
                             </span>
                           )}
@@ -756,7 +756,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="flex items-center gap-2 truncate">
                         <span>Engine: <span className="text-white/85 font-medium">{activeProvider?.name}</span></span>
                         <span>•</span>
-                        <span>Model: <span className="text-emerald-400 font-semibold">{activeModel}</span></span>
+                        <span>Model: <span className="text-white font-semibold">{activeModel}</span></span>
                       </div>
                       <div className="text-[10px] text-white/35 truncate max-w-xs font-mono">
                         {activeProvider?.base_url}
@@ -794,18 +794,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             onClick={() => setSelectedProviderId(cp.id)}
                             className={`p-4 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-3 group relative border shadow-sm ${
                               isGlobalActive
-                                ? "bg-white/[0.045] border-emerald-500/30"
-                                : "bg-white/[0.02] hover:bg-white/[0.045] border-white/[0.03]"
+                                ? "bg-white/[0.06] border-white/20"
+                                : "bg-white/[0.02] hover:bg-white/[0.045] border-white/[0.04]"
                             }`}
                           >
                             {/* Baris Atas: Info Provider & Tombol Aksi */}
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-2.5 min-w-0 pr-1">
                                 <div
-                                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
                                     isGlobalActive
-                                      ? "bg-emerald-500/15 text-emerald-300"
-                                      : "bg-white/[0.06] text-white/80"
+                                      ? "bg-white/15 text-white border-white/20"
+                                      : "bg-white/[0.05] text-white/70 border-white/[0.05]"
                                   }`}
                                 >
                                   <Bot size={18} />
@@ -816,7 +816,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       {cp.name}
                                     </span>
                                     {isGlobalActive && (
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono font-medium">
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/15 text-white font-mono font-medium border border-white/20">
                                         AKTIF
                                       </span>
                                     )}
@@ -849,7 +849,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {hasConnection ? (
                                   <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                                     <span className="text-white/60">
                                       {cp.connectionsCount || cp.api_keys.length} Connected
                                     </span>
@@ -900,17 +900,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             onClick={() => setSelectedProviderId(dp.id)}
                             className={`p-3.5 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-2.5 group relative border shadow-sm ${
                               isGlobalActive
-                                ? "bg-white/[0.045] border-emerald-500/30"
-                                : "bg-white/[0.02] hover:bg-white/[0.04] border-white/[0.03]"
+                                ? "bg-white/[0.06] border-white/20"
+                                : "bg-white/[0.02] hover:bg-white/[0.04] border-white/[0.04]"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-2.5 min-w-0 pr-1">
                                 <div
-                                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
                                     isGlobalActive
-                                      ? "bg-emerald-500/15 text-emerald-300"
-                                      : "bg-white/[0.05] text-white/70"
+                                      ? "bg-white/15 text-white border-white/20"
+                                      : "bg-white/[0.05] text-white/70 border-white/[0.05]"
                                   }`}
                                 >
                                   {dp.id === "gemini" ? (
@@ -927,7 +927,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       {dp.name}
                                     </span>
                                     {isGlobalActive && (
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono font-medium">
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/15 text-white font-mono font-medium border border-white/20">
                                         AKTIF
                                       </span>
                                     )}
@@ -950,7 +950,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {hasConnection ? (
                                   <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                                     <span className="text-white/55">
                                       {dp.connectionsCount || dp.api_keys.length} Connected
                                     </span>
@@ -993,7 +993,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               {selectedProvider.protocol.toUpperCase()} COMPATIBLE
                             </span>
                             {selectedProvider.category === "default" && (
-                              <span className="px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 text-[10px] font-mono">
+                              <span className="px-1.5 py-0.2 rounded bg-white/[0.08] text-white/70 text-[10px] font-mono border border-white/10">
                                 DEFAULT
                               </span>
                             )}
@@ -1001,7 +1001,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <div className="text-[11px] text-white/40 mt-0.5 font-mono flex items-center gap-1.5">
                             {selectedProvider.api_keys.length > 0 ? (
                               <>
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/70 shrink-0"></span>
                                 <span>{selectedProvider.api_keys.length} connections aktif (Online)</span>
                               </>
                             ) : (
@@ -1130,7 +1130,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           >
                             <div className="flex items-center gap-2 font-mono text-[11px] min-w-0 truncate">
                               <span className="text-white/35">Key {idx + 1}</span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                               <span className="text-white/35">active #{idx + 1}</span>
                               <span className="text-white/80 truncate">
                                 {key.length > 8 ? `${key.substring(0, 4)}••••••••${key.slice(-4)}` : key}
@@ -1138,7 +1138,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             </div>
                             <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
                               {testStatus[`key-${idx}`] && (
-                                <span className="text-emerald-400">{testStatus[`key-${idx}`]}</span>
+                                <span className="text-white/70">{testStatus[`key-${idx}`]}</span>
                               )}
                               <button
                                 onClick={() => handleTestPing(`key-${idx}`)}
@@ -1235,7 +1235,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   <div className="text-[12px] font-mono text-white/85 truncate flex items-center gap-2">
                                     <span>{m.id}</span>
                                     {isCurrentActive && (
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-sans">
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/15 text-white font-mono font-medium border border-white/20">
                                         Aktif
                                       </span>
                                     )}
@@ -1248,7 +1248,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                               <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
                                 {testStatus[m.id] && (
-                                  <span className="text-emerald-400 mr-1">{testStatus[m.id]}</span>
+                                  <span className="text-white/70 mr-1">{testStatus[m.id]}</span>
                                 )}
                                 <button
                                   onClick={() => handleApplyModel(m.id)}

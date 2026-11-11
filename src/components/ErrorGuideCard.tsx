@@ -53,18 +53,18 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
       </div>
 
       {/* 1. Problem Statement */}
-      <div className="p-3 rounded-2xl bg-rose-500/[0.08] border border-rose-500/15">
-        <div className="text-[11px] font-medium text-rose-300/60 uppercase tracking-wider mb-1">
+      <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
+        <div className="text-[11px] font-mono font-medium text-white/45 uppercase tracking-wider mb-1">
           {error.error_type || "Sintaks Error"}
         </div>
-        <div className="text-[13.5px] font-medium text-rose-200/95 leading-relaxed">
+        <div className="text-[13.5px] font-medium text-white/95 leading-relaxed">
           {explanation.summary || error.raw_message}
         </div>
       </div>
 
       {/* 2. Educational Concept */}
       <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.05] space-y-1">
-        <div className="text-[11px] font-medium uppercase tracking-wider text-amber-300/70">
+        <div className="text-[11px] font-mono font-medium uppercase tracking-wider text-white/45">
           Kenapa ini terjadi?
         </div>
         <p className="text-[13px] text-white/70 leading-relaxed font-normal">
@@ -95,7 +95,7 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
                   <div
                     className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition ${
                       isChecked
-                        ? "bg-emerald-500/80 border-emerald-500 text-white"
+                        ? "bg-white text-black border-white"
                         : "border-white/20 bg-white/[0.03]"
                     }`}
                   >

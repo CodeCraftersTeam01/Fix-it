@@ -99,8 +99,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         {currentError && explanation ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-[11px] text-white/40 pb-0.5">
-              <span className="flex items-center gap-1.5 font-medium text-amber-300/80">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="flex items-center gap-1.5 font-medium text-white/80">
+                <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
                 Error Terdeteksi
               </span>
               <button
@@ -122,8 +122,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
                       activeFileActivity?.status.includes("Menulis")
-                        ? "bg-amber-400 animate-ping"
-                        : "bg-emerald-400 animate-pulse"
+                        ? "bg-white animate-ping"
+                        : "bg-white/70 animate-pulse"
                     }`}
                   />
                   <span className="text-[12px] font-medium text-white/90 truncate">
