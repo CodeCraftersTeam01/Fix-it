@@ -203,7 +203,7 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
 
     let _ = watcher.watch_paths(paths, move |changed_file| {
         let app_inner = app_for_callback.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             if let Some(mut err) = DiagnosticsParser::inspect_file(&changed_file) {
                 let file_name = changed_file
                     .file_name()

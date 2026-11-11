@@ -1,10 +1,8 @@
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub struct SmartIdleWatcher {
     idle_delay: Duration,
@@ -40,9 +38,9 @@ impl SmartIdleWatcher {
         let idle_delay = self.idle_delay;
         let callback = Arc::new(on_idle_detected);
 
-        // Background worker loop that collects events and resets the debounce timer
+        // Background worker thread that collects file change events and debounces typing
         std::thread::spawn(move || {
-            let _watcher = watcher; // Keep watcher alive
+            let _watcher = watcher; // Keep watcher alive in this thread
             while let Ok(event_res) = rx.recv() {
                 if let Ok(Event { paths, .. }) = event_res {
                     if let Some(first_path) = paths.into_iter().next() {
@@ -67,30 +65,40 @@ impl SmartIdleWatcher {
                             continue;
                         }
 
-                        let state_clone = Arc::clone(&state);
-                        tokio::spawn(async move {
-                            let mut lock = state_clone.lock().await;
+                        if let Ok(mut lock) = state.lock() {
                             *lock = Some((first_path, Instant::now()));
-                        });
+                        }
                     }
                 }
             }
         });
 
-        // Ticker loop checking for the quiet "idle" window after typing stops
+        // Dedicated ticker thread checking for the quiet "idle" window after typing stops
         let state_checker = Arc::clone(&self.last_event_time);
-        tokio::spawn(async move {
+        std::thread::spawn(move || {
             loop {
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                let mut lock = state_checker.lock().await;
-                if let Some((path, recorded_at)) = lock.take() {
-                    if recorded_at.elapsed() >= idle_delay {
-                        // Idle window achieved! Mahasiswa has stopped typing for idle_delay.
-                        callback(path);
+                std::thread::sleep(Duration::from_millis(250));
+                let to_notify = {
+                    if let Ok(mut lock) = state_checker.lock() {
+                        if let Some((path, recorded_at)) = lock.take() {
+                            if recorded_at.elapsed() >= idle_delay {
+                                // Idle window achieved! Student stopped typing for idle_delay.
+                                Some(path)
+                            } else {
+                                // Debounce not elapsed yet, put it back
+                                *lock = Some((path, recorded_at));
+                                None
+                            }
+                        } else {
+                            None
+                        }
                     } else {
-                        // Put it back because debounce duration hasn't elapsed yet
-                        *lock = Some((path, recorded_at));
+                        None
                     }
+                };
+
+                if let Some(path) = to_notify {
+                    callback(path);
                 }
             }
         });
