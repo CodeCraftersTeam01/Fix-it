@@ -261,3 +261,4 @@
   ```bash
   git -c user.name="Lanvry" -c user.email="wardilanang46@gmail.com" commit --author="Lanvry <wardilanang46@gmail.com>" -m "test(e2e): verify end-to-end idle detection and hud flow"
   ```
+

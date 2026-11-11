@@ -1,0 +1,29 @@
+[package]
+name = "fixit"
+version = "0.1.0"
+description = "Smart Desktop Assistant for Programming Students"
+authors = ["Lanvry", "CS-Orion"]
+edition = "2021"
+
+[lib]
+name = "fixit_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = ["tray-icon"] }
+tauri-plugin-notification = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+notify = "6.1"
+regex = "1.10"
+dirs = "5.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.10"
+

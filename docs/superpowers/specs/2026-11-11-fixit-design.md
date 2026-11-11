@@ -82,3 +82,4 @@ Mahasiswa yang sedang menjalani praktikum sering kali kebingungan saat menghadap
   - `openai_api_key`: string
   - `model_name`: default `gpt-4o-mini` atau model pilihan mahasiswa
   - `idle_delay_seconds`: default `2.5` detik.
+
