@@ -67,11 +67,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   return (
     <div
-      onMouseDown={handleStartDrag}
-      data-tauri-drag-region
-      className="w-full h-full rounded-[32px] apple-hud-glass flex flex-col overflow-hidden relative select-none cursor-grab active:cursor-grabbing"
+      className="w-full h-full rounded-[32px] apple-hud-glass flex flex-col overflow-hidden relative select-none cursor-default"
     >
-      {/* Top Header Buttons */}
+      {/* Top Header Bar (Only region allowed for dragging) */}
       <HeaderBar
         onClose={onClose}
         onExpand={onExpand}
@@ -87,27 +85,17 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         onSave={onSaveSettings}
       />
 
-      {/* Greeting Title (Exact Apple layout: Left-aligned bold title right below header) */}
-      <div
-        data-tauri-drag-region
-        onMouseDown={handleStartDrag}
-        className="px-6 pt-2 pb-1"
-      >
-        <div className="text-[26px] font-medium text-white tracking-tight pointer-events-none">
+      {/* Greeting Title */}
+      <div className="px-6 pt-2 pb-1 select-none pointer-events-none">
+        <div className="text-[26px] font-medium text-white tracking-tight">
           {getGreeting()}
         </div>
       </div>
 
-      {/* Scrollable Content Body */}
+      {/* Scrollable Content Body (Not draggable) */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-6 py-2 space-y-4 cursor-default"
-        onMouseDown={(e) => {
-          // If clicked directly on the background (not a child text/button), allow dragging
-          if (e.target === e.currentTarget) {
-            handleStartDrag(e);
-          }
-        }}
       >
         {/* Active Error Guide */}
         {currentError && explanation ? (
