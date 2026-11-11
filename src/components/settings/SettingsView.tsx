@@ -68,6 +68,12 @@ const AgnesLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) 
   </svg>
 );
 
+const DeepSeekLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3.87 13.9a5.52 5.52 0 0 1-3.87 1.55 5.45 5.45 0 0 1-5.45-5.45c0-3.01 2.44-5.45 5.45-5.45 1.51 0 2.88.62 3.87 1.62l-1.38 1.38a3.5 3.5 0 0 0-2.49-1.05 3.5 3.5 0 0 0-3.5 3.5 3.5 3.5 0 0 0 3.5 3.5c.97 0 1.84-.39 2.49-1.03l1.38 1.38z" />
+  </svg>
+);
+
 const RouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <rect x="2" y="14" width="20" height="8" rx="2" />
@@ -77,13 +83,15 @@ const RouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" })
 );
 
 const renderProviderLogo = (provider: AIProvider, className: string = "w-4 h-4") => {
+  if (provider.id === "deepseek") return <DeepSeekLogo className={className} />;
   if (provider.id === "gemini") return <GeminiLogo className={className} />;
   if (provider.id === "groq") return <GroqLogo className={className} />;
   if (provider.id === "openrouter") return <OpenRouterLogo className={className} />;
+  if (provider.id === "claude" || provider.protocol === "anthropic") return <AnthropicLogo className={className} />;
+  if (provider.id === "openai") return <OpenAILogo className={className} />;
   if (provider.id === "opencode") return <OpenCodeLogo className={className} />;
   if (provider.id === "agnes") return <AgnesLogo className={className} />;
   if (provider.id === "larprouter") return <RouterLogo className={className} />;
-  if (provider.protocol === "anthropic") return <AnthropicLogo className={className} />;
   return <OpenAILogo className={className} />;
 };
 
@@ -110,32 +118,49 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     ],
   },
 
-  // 2. Default Providers (Fully visitable & configurable!)
+  // 2. Default Providers (Major AI Industry Leaders)
   {
-    id: "agnes",
-    name: "Agnes AI Core",
+    id: "openai",
+    name: "OpenAI",
     category: "default",
     protocol: "openai",
-    base_url: "https://api.agnes.ai/v1",
-    api_keys: ["sk-agnes-core-active-key"],
-    active_model: "agnes-2.5-flash",
+    base_url: "https://api.openai.com/v1",
+    api_keys: ["sk-proj-openai-live-key"],
+    active_model: "gpt-4o",
     badge: "Primary",
     connectionsCount: 8,
     available_models: [
-      { id: "agnes-2.5-flash", name: "agnes-2.5-flash", description: "Model utama cepat untuk evaluasi sintaks & error praktikum" },
-      { id: "agnes-2.5-pro", name: "agnes-2.5-pro", description: "Model penalaran mendalam untuk bug kompleks" },
-      { id: "agnes-3.0-flash", name: "agnes-3.0-flash", description: "Next-gen flash model dengan latensi ultra rendah" },
+      { id: "gpt-4o", name: "gpt-4o", description: "Flagship multimodal intelligence & top reasoning" },
+      { id: "gpt-4o-mini", name: "gpt-4o-mini", description: "Ringkas, hemat, dan latensi super rendah" },
+      { id: "o3-mini", name: "o3-mini", description: "High-reasoning STEM & coding specialized model" },
+      { id: "o1", name: "o1", description: "Deep reasoning benchmark champion" },
+    ],
+  },
+  {
+    id: "claude",
+    name: "Anthropic Claude",
+    category: "default",
+    protocol: "anthropic",
+    base_url: "https://api.anthropic.com/v1",
+    api_keys: ["sk-ant-api-live-key"],
+    active_model: "claude-3-7-sonnet",
+    badge: "Coding",
+    connectionsCount: 8,
+    available_models: [
+      { id: "claude-3-7-sonnet", name: "claude-3-7-sonnet", description: "Claude 3.7 Sonnet - Hybrid reasoning & architecture code" },
+      { id: "claude-3-5-sonnet", name: "claude-3-5-sonnet", description: "Industry standard for programming & logic refactoring" },
+      { id: "claude-3-5-haiku", name: "claude-3-5-haiku", description: "Ultra-fast code triage & instant diagnostics" },
     ],
   },
   {
     id: "gemini",
-    name: "Google Gemini Studio",
+    name: "Google Gemini",
     category: "default",
     protocol: "gemini",
     base_url: "https://generativelanguage.googleapis.com/v1beta",
     api_keys: ["AIzaSy-studio-active-key"],
     active_model: "gemini-2.0-flash",
-    badge: "15 RPM",
+    badge: "Multimodal",
     connectionsCount: 8,
     available_models: [
       { id: "gemini-2.0-flash", name: "gemini-2.0-flash", description: "Google Gemini 2.0 Flash - Kecepatan tinggi & akurasi tinggi" },
@@ -144,65 +169,50 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     ],
   },
   {
+    id: "deepseek",
+    name: "DeepSeek AI",
+    category: "default",
+    protocol: "openai",
+    base_url: "https://api.deepseek.com/v1",
+    api_keys: ["sk-deepseek-live-key"],
+    active_model: "deepseek-chat",
+    badge: "Reasoning",
+    connectionsCount: 8,
+    available_models: [
+      { id: "deepseek-chat", name: "deepseek-chat", description: "DeepSeek-V3 - Model chat & programming berperforma tinggi" },
+      { id: "deepseek-reasoner", name: "deepseek-reasoner", description: "DeepSeek-R1 - Chain-of-thought deep reasoning logic" },
+    ],
+  },
+  {
     id: "groq",
-    name: "Groq LPU Inference",
+    name: "Groq LPU",
     category: "default",
     protocol: "openai",
     base_url: "https://api.groq.com/openai/v1",
     api_keys: ["gsk_groq_lpu_speed_key"],
     active_model: "llama-3.3-70b-versatile",
-    badge: "LPU Fast",
+    badge: "500+ T/s",
     connectionsCount: 10,
     available_models: [
       { id: "llama-3.3-70b-versatile", name: "llama-3.3-70b-versatile", description: "Meta Llama 3.3 70B di Groq LPU (500+ token/detik)" },
-      { id: "llama-3.1-8b-instant", name: "llama-3.1-8b-instant", description: "Meta Llama 3.1 8B - Inferensi super kilat" },
+      { id: "deepseek-r1-distill-llama-70b", name: "deepseek-r1-distill-llama-70b", description: "DeepSeek R1 Distill 70B ultra kilat" },
       { id: "mixtral-8x7b-32768", name: "mixtral-8x7b-32768", description: "Mistral MoE 8x7B dengan context 32k" },
     ],
   },
   {
     id: "openrouter",
-    name: "OpenRouter Free Hub",
+    name: "OpenRouter",
     category: "default",
     protocol: "openai",
     base_url: "https://openrouter.ai/api/v1",
     api_keys: ["sk-or-v1-hub-free-key"],
     active_model: "deepseek/deepseek-r1:free",
-    badge: "Chat",
+    badge: "Free Hub",
     connectionsCount: 9,
     available_models: [
       { id: "deepseek/deepseek-r1:free", name: "deepseek/deepseek-r1:free", description: "DeepSeek R1 reasoning gratis tanpa biaya" },
       { id: "deepseek/deepseek-chat:free", name: "deepseek/deepseek-chat:free", description: "DeepSeek V3 chat general koding" },
       { id: "meta-llama/llama-3.3-70b-instruct:free", name: "meta-llama/llama-3.3-70b-instruct:free", description: "Llama 3.3 70B gratis OpenRouter" },
-    ],
-  },
-  {
-    id: "opencode",
-    name: "OpenCode AI Inference",
-    category: "default",
-    protocol: "openai",
-    base_url: "https://api.opencode.ai/v1",
-    api_keys: ["sk-opencode-dev-key"],
-    active_model: "opencode-coder-32b",
-    badge: "Chat",
-    connectionsCount: 1,
-    available_models: [
-      { id: "opencode-coder-32b", name: "opencode-coder-32b", description: "Spesialis syntax analysis & logic bug resolution" },
-      { id: "opencode-fast-7b", name: "opencode-fast-7b", description: "Model kode ringan untuk parsing instan" },
-    ],
-  },
-  {
-    id: "larprouter",
-    name: "LarpRouter Gateway",
-    category: "default",
-    protocol: "openai",
-    base_url: "https://api.larprouter.io/v1",
-    api_keys: ["sk-larp-gateway-key"],
-    active_model: "larp-router-fast",
-    badge: "Chat",
-    connectionsCount: 8,
-    available_models: [
-      { id: "larp-router-fast", name: "larp-router-fast", description: "Gateway multi-model dengan auto fallback" },
-      { id: "larp-reasoner-v1", name: "larp-reasoner-v1", description: "High-accuracy code troubleshooting agent" },
     ],
   },
 ];

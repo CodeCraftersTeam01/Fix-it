@@ -7,6 +7,45 @@ interface ErrorGuideCardProps {
   explanation: FixExplanation;
 }
 
+interface WordBlurRevealProps {
+  text: string;
+  baseDelayMs?: number;
+  wordDelayMs?: number;
+}
+
+export const WordBlurReveal: React.FC<WordBlurRevealProps> = ({
+  text,
+  baseDelayMs = 0,
+  wordDelayMs = 24,
+}) => {
+  if (!text) return null;
+  const tokens = text.split(/(\s+)/);
+
+  let wordCount = 0;
+  return (
+    <>
+      {tokens.map((token, idx) => {
+        if (/^\s+$/.test(token)) {
+          return token;
+        }
+        const delay = baseDelayMs + wordCount * wordDelayMs;
+        wordCount++;
+        return (
+          <span
+            key={idx}
+            className="animate-word-blur"
+            style={{
+              animationDelay: `${delay}ms`,
+            }}
+          >
+            {token}
+          </span>
+        );
+      })}
+    </>
+  );
+};
+
 export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
   error,
   explanation,
@@ -58,7 +97,12 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
           {error.error_type || "Sintaks Error"}
         </div>
         <div className="text-[13.5px] font-medium text-white/95 leading-relaxed">
-          {explanation.summary || error.raw_message}
+          <WordBlurReveal
+            key={`summary-${explanation.summary || error.raw_message}`}
+            text={explanation.summary || error.raw_message}
+            baseDelayMs={40}
+            wordDelayMs={24}
+          />
         </div>
       </div>
 
@@ -68,7 +112,12 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
           Kenapa ini terjadi?
         </div>
         <p className="text-[13px] text-white/70 leading-relaxed font-normal">
-          {explanation.why_it_happened}
+          <WordBlurReveal
+            key={`why-${explanation.why_it_happened}`}
+            text={explanation.why_it_happened}
+            baseDelayMs={180}
+            wordDelayMs={20}
+          />
         </p>
       </div>
 
@@ -101,7 +150,14 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
                   >
                     {isChecked && <Check size={11} strokeWidth={3} />}
                   </div>
-                  <span className="leading-snug">{step}</span>
+                  <span className="leading-snug">
+                    <WordBlurReveal
+                      key={`step-${idx}-${step}`}
+                      text={step}
+                      baseDelayMs={300 + idx * 80}
+                      wordDelayMs={18}
+                    />
+                  </span>
                 </button>
               );
             })}

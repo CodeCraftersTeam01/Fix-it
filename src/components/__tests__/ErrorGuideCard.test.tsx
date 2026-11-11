@@ -27,12 +27,16 @@ describe("ErrorGuideCard", () => {
     expect(screen.getByText("User.php")).toBeTruthy();
     expect(screen.getByText("Line 42")).toBeTruthy();
     expect(screen.getByText("Tugas-Akhir")).toBeTruthy();
-    expect(screen.getByText("Namespace atau model Post belum di-import.")).toBeTruthy();
+    expect(
+      screen.getByText((_, el) => el?.textContent === "Namespace atau model Post belum di-import.")
+    ).toBeTruthy();
   });
 
   it("toggles checklist items on click", () => {
     render(<ErrorGuideCard error={mockError} explanation={mockExplanation} />);
-    const stepButton = screen.getByText("Tambahkan 'use App\\Models\\Post;' di bagian atas file.");
+    const stepButton = screen.getByRole("button", {
+      name: (content) => content.includes("Tambahkan 'use App\\Models\\Post;'"),
+    });
     expect(stepButton).toBeTruthy();
     fireEvent.click(stepButton);
   });
