@@ -89,14 +89,73 @@ impl AppConfig {
         base.join("fixit").join("config.json")
     }
 
-    pub fn default_watched_paths() -> Vec<String> {
-        let mut paths = Vec::new();
+    pub fn percent_decode(s: &str) -> String {
+        let mut bytes = Vec::new();
+        let mut chars = s.bytes();
+        while let Some(b) = chars.next() {
+            if b == b'%' {
+                let h1 = chars.next().unwrap_or(0);
+                let h2 = chars.next().unwrap_or(0);
+                if let Ok(val) = u8::from_str_radix(std::str::from_utf8(&[h1, h2]).unwrap_or("00"), 16) {
+                    bytes.push(val);
+                    continue;
+                }
+            }
+            bytes.push(b);
+        }
+        String::from_utf8_lossy(&bytes).to_string()
+    }
+
+    pub fn discover_ide_workspaces() -> Vec<String> {
+        let mut paths = std::collections::BTreeSet::new();
         if let Some(home) = dirs::home_dir() {
             let herd = home.join("Herd");
             if herd.exists() {
-                paths.push(herd.to_string_lossy().to_string());
-            } else {
-                paths.push(home.to_string_lossy().to_string());
+                paths.insert(herd.to_string_lossy().to_string());
+            }
+
+            let ides = ["Antigravity IDE", "Code", "Cursor", "Windsurf", "VSCodium", "Kiro"];
+            let app_support = home.join("Library").join("Application Support");
+
+            for ide in ides {
+                let ws_storage = app_support.join(ide).join("User").join("workspaceStorage");
+                if ws_storage.exists() {
+                    if let Ok(entries) = fs::read_dir(ws_storage) {
+                        for entry in entries.flatten() {
+                            let ws_json = entry.path().join("workspace.json");
+                            if ws_json.exists() {
+                                if let Ok(content) = fs::read_to_string(ws_json) {
+                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        if let Some(folder_uri) = val["folder"].as_str() {
+                                            if let Some(stripped) = folder_uri.strip_prefix("file://") {
+                                                let decoded = Self::percent_decode(stripped);
+                                                let p = PathBuf::from(decoded);
+                                                if p.exists() {
+                                                    paths.insert(p.to_string_lossy().to_string());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        paths.into_iter().collect()
+    }
+
+    pub fn default_watched_paths() -> Vec<String> {
+        let mut paths = Self::discover_ide_workspaces();
+        if paths.is_empty() {
+            if let Some(home) = dirs::home_dir() {
+                let herd = home.join("Herd");
+                if herd.exists() {
+                    paths.push(herd.to_string_lossy().to_string());
+                } else {
+                    paths.push(home.to_string_lossy().to_string());
+                }
             }
         }
         if paths.is_empty() {
@@ -117,10 +176,18 @@ impl AppConfig {
                 }
             }
         }
-        if config.watched_paths.is_empty() {
-            config.watched_paths = Self::default_watched_paths();
-            let _ = config.save();
+        // Always ensure active IDE workspaces and Herd are monitored
+        let discovered = Self::discover_ide_workspaces();
+        let mut set: std::collections::BTreeSet<String> = config.watched_paths.into_iter().collect();
+        for p in discovered {
+            set.insert(p);
         }
+        if set.is_empty() {
+            config.watched_paths = Self::default_watched_paths();
+        } else {
+            config.watched_paths = set.into_iter().collect();
+        }
+        let _ = config.save();
         config
     }
 

@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { FloatingHud } from "./components/FloatingHud";
 import { SettingsView } from "./components/settings/SettingsView";
 import { AppSettings } from "./components/settings/types";
-import { CodeError, FixExplanation, ChatMessage } from "./types";
+import { CodeError, FixExplanation, ChatMessage, FileActivity } from "./types";
 
 export function App() {
   const isSettingsRoute = typeof window !== "undefined" && window.location.hash === "#settings";
   const [currentError, setCurrentError] = useState<CodeError | null>(null);
   const [explanation, setExplanation] = useState<FixExplanation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeFileActivity, setActiveFileActivity] = useState<FileActivity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings>({
@@ -34,7 +35,7 @@ export function App() {
       }
     };
 
-    // 2. Listen to live error events from Tauri background watcher
+    // 2. Listen to live error events & file activities from Tauri background watcher
     const setupTauriEvents = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -45,6 +46,19 @@ export function App() {
             setExplanation(event.payload.explanation);
           }
         );
+        await listen<FileActivity>("fixit-file-writing", (event) => {
+          setActiveFileActivity(event.payload);
+        });
+        await listen<FileActivity>("fixit-file-valid", (event) => {
+          setActiveFileActivity(event.payload);
+          // Auto-clear active error if student fixed the broken file
+          setCurrentError((prev) => {
+            if (prev && prev.file_path === event.payload.file_path) {
+              return null;
+            }
+            return prev;
+          });
+        });
         await listen("open-settings", async () => {
           try {
             const { invoke } = await import("@tauri-apps/api/core");
@@ -200,6 +214,7 @@ export function App() {
       currentError={currentError}
       explanation={explanation}
       messages={messages}
+      activeFileActivity={activeFileActivity}
       onSendMessage={handleSendMessage}
       onClose={handleClose}
       onExpand={handleExpand}

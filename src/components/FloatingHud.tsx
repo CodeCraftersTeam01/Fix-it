@@ -3,12 +3,13 @@ import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
 import { AppSettings } from "./SettingsModal";
-import { CodeError, FixExplanation, ChatMessage } from "../types";
+import { CodeError, FixExplanation, ChatMessage, FileActivity } from "../types";
 
 interface FloatingHudProps {
   currentError?: CodeError | null;
   explanation?: FixExplanation | null;
   messages: ChatMessage[];
+  activeFileActivity?: FileActivity | null;
   onSendMessage: (text: string) => void;
   onClose: () => void;
   onExpand?: () => void;
@@ -24,6 +25,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   currentError,
   explanation,
   messages,
+  activeFileActivity,
   onSendMessage,
   onClose,
   onExpand,
@@ -109,21 +111,47 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             <ErrorGuideCard error={currentError} explanation={explanation} />
           </div>
         ) : (
-          /* Cozy Standby State (Zero AI Slop) */
+          /* Live IDE & File Activity Card (Clean Apple Obsidian) */
           <div className="space-y-4 pt-1">
-            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] space-y-2.5">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[12px] font-medium text-emerald-400/90 tracking-wide">
-                  Standby Memantau
+            <div className="p-4 rounded-2xl bg-white/[0.035] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      activeFileActivity?.status.includes("Menulis")
+                        ? "bg-amber-400 animate-ping"
+                        : "bg-emerald-400 animate-pulse"
+                    }`}
+                  />
+                  <span className="text-[12px] font-medium text-white/90 tracking-wide">
+                    {activeFileActivity ? activeFileActivity.status : "Standby Memantau IDE"}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/60">
+                  {activeFileActivity?.editor || "Antigravity / VS Code / Cursor"}
                 </span>
               </div>
-              <p className="text-[13px] text-white/70 leading-relaxed font-normal">
-                Fokus ngoding aja. Kalau ada error sintaks atau runtime macet, solusinya langsung muncul di sini.
-              </p>
+
+              {activeFileActivity ? (
+                <div className="space-y-1 pt-0.5">
+                  <div className="text-[13.5px] font-mono font-medium text-white/95 flex items-center gap-1.5 truncate">
+                    <span>📄</span>
+                    <span className="truncate">{activeFileActivity.file_name}</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-white/40 truncate">
+                    {activeFileActivity.project} • {activeFileActivity.file_path}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[12.5px] text-white/65 leading-relaxed font-normal">
+                  Fokus ngoding di <strong className="text-white/85 font-medium">Antigravity IDE, VS Code, Cursor, atau Kiro</strong>. Berkas yang sedang kamu ketik akan otomatis terdeteksi di sini.
+                </p>
+              )}
+
               {settings?.watched_paths && settings.watched_paths.length > 0 && (
-                <div className="text-[11px] font-mono text-white/35 truncate pt-1 border-t border-white/[0.04]">
-                  📁 {settings.watched_paths[0]}
+                <div className="text-[10.5px] font-mono text-white/35 truncate pt-2 border-t border-white/[0.04] flex items-center justify-between">
+                  <span className="truncate">📁 {settings.watched_paths.length} workspace aktif dipantau</span>
+                  <span className="text-white/25 shrink-0 ml-1">Auto-Sync</span>
                 </div>
               )}
             </div>
@@ -135,7 +163,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               <button
                 type="button"
                 onClick={onSimulateError}
-                className="w-full text-left flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.04] transition text-[12.5px] text-white/80 group cursor-pointer"
+                className="w-full text-left flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] transition text-[12.5px] text-white/80 group cursor-pointer"
               >
                 <span>Simulasikan deteksi error PHP</span>
                 <span className="text-white/30 group-hover:text-white/70 transition">→</span>

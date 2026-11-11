@@ -17,10 +17,16 @@ impl SmartIdleWatcher {
         }
     }
 
-    /// Starts watching paths with smart idle debounce
-    pub fn watch_paths<F>(&self, paths: Vec<PathBuf>, on_idle_detected: F) -> Result<(), String>
+    /// Starts watching paths with smart idle debounce and real-time writing detection
+    pub fn watch_paths<F1, F2>(
+        &self,
+        paths: Vec<PathBuf>,
+        on_writing: F1,
+        on_idle_detected: F2,
+    ) -> Result<(), String>
     where
-        F: Fn(PathBuf) + Send + Sync + 'static,
+        F1: Fn(PathBuf) + Send + Sync + 'static,
+        F2: Fn(PathBuf) + Send + Sync + 'static,
     {
         let (tx, rx) = channel();
         let mut watcher = RecommendedWatcher::new(tx, notify::Config::default())
@@ -28,15 +34,14 @@ impl SmartIdleWatcher {
 
         for p in &paths {
             if p.exists() {
-                watcher
-                    .watch(p, RecursiveMode::Recursive)
-                    .map_err(|e| format!("Failed to watch path {:?}: {}", p, e))?;
+                let _ = watcher.watch(p, RecursiveMode::Recursive);
             }
         }
 
         let state = Arc::clone(&self.last_event_time);
         let idle_delay = self.idle_delay;
-        let callback = Arc::new(on_idle_detected);
+        let writing_cb = Arc::new(on_writing);
+        let idle_cb = Arc::new(on_idle_detected);
 
         // Background worker thread that collects file change events and debounces typing
         std::thread::spawn(move || {
@@ -59,15 +64,18 @@ impl SmartIdleWatcher {
                         // Only watch supported code files
                         let is_code = first_path.extension().map_or(false, |ext| {
                             let e = ext.to_string_lossy().to_lowercase();
-                            matches!(e.as_str(), "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "json")
+                            matches!(e.as_str(), "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "json")
                         });
                         if !is_code {
                             continue;
                         }
 
                         if let Ok(mut lock) = state.lock() {
-                            *lock = Some((first_path, Instant::now()));
+                            *lock = Some((first_path.clone(), Instant::now()));
                         }
+
+                        // Immediately notify that student is writing to this file
+                        writing_cb(first_path);
                     }
                 }
             }
@@ -98,7 +106,7 @@ impl SmartIdleWatcher {
                 };
 
                 if let Some(path) = to_notify {
-                    callback(path);
+                    idle_cb(path);
                 }
             }
         });

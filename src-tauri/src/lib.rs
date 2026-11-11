@@ -75,6 +75,11 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn discover_ide_workspaces() -> Result<Vec<String>, String> {
+        Ok(AppConfig::discover_ide_workspaces())
+    }
+
+    #[tauri::command]
     pub async fn get_config(state: tauri::State<'_, AppState>) -> Result<AppConfig, String> {
         let conf = state.config.lock().await;
         Ok(conf.clone())
@@ -217,6 +222,31 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn detect_active_ide() -> String {
+    let output = std::process::Command::new("ps")
+        .args(["-ax", "-o", "comm="])
+        .output();
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        if text.contains("antigravity ide") {
+            return "Antigravity IDE".to_string();
+        }
+        if text.contains("cursor") {
+            return "Cursor".to_string();
+        }
+        if text.contains("windsurf") {
+            return "Windsurf".to_string();
+        }
+        if text.contains("kiro") {
+            return "Kiro".to_string();
+        }
+        if text.contains("code") {
+            return "VS Code".to_string();
+        }
+    }
+    "Antigravity / VS Code".to_string()
+}
+
 pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
     let app_handle = app.clone();
     let idle_ms = config.idle_delay_ms;
@@ -227,12 +257,40 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
     }
 
     let watcher = SmartIdleWatcher::new(idle_ms);
-    let app_for_callback = app_handle.clone();
+    let app_for_writing = app_handle.clone();
+    let app_for_idle = app_handle.clone();
 
-    let _ = watcher.watch_paths(paths, move |changed_file| {
-        let app_inner = app_for_callback.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Some(mut err) = DiagnosticsParser::inspect_file(&changed_file) {
+    let _ = watcher.watch_paths(
+        paths,
+        // 1. Real-time writing callback
+        move |writing_file| {
+            let app_inner = app_for_writing.clone();
+            let file_name = writing_file
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| "berkas".to_string());
+
+            let project = writing_file
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Workspace".to_string());
+
+            let editor = detect_active_ide();
+
+            let _ = app_inner.emit("fixit-file-writing", serde_json::json!({
+                "file_path": writing_file.to_string_lossy().to_string(),
+                "file_name": file_name,
+                "project": project,
+                "editor": editor,
+                "status": "Sedang Menulis...",
+                "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+            }));
+        },
+        // 2. Idle debounce callback (evaluates code after student pauses typing)
+        move |changed_file| {
+            let app_inner = app_for_idle.clone();
+            tauri::async_runtime::spawn(async move {
                 let file_name = changed_file
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
@@ -241,47 +299,63 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
                 let project = changed_file
                     .parent()
                     .and_then(|p| p.file_name())
-                    .map(|p| p.to_string_lossy().to_string());
-                err.project_name = project;
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Workspace".to_string());
 
-                let line_str = err.line_number.map(|l| format!(" di baris {}", l)).unwrap_or_default();
-                let notif_body = format!("Ditemukan {}{} pada berkas {}", err.error_type, line_str, file_name);
+                let editor = detect_active_ide();
 
-                let _ = app_inner
-                    .notification()
-                    .builder()
-                    .title("FixIt: Ada Error Terdeteksi")
-                    .body(&notif_body)
-                    .show();
+                if let Some(mut err) = DiagnosticsParser::inspect_file(&changed_file) {
+                    err.project_name = Some(project.clone());
 
-                let state: tauri::State<AppState> = app_inner.state();
-                let conf = state.config.lock().await;
-                let explanation = match AiClient::analyze_error(&err, &conf).await {
-                    Ok(exp) => exp,
-                    Err(_) => FixExplanation {
-                        summary: format!("Terdeteksi {} pada baris {:?}", err.error_type, err.line_number.unwrap_or(0)),
-                        why_it_happened: format!("Pesan error: {}", err.raw_message),
-                        steps: vec![
-                            "Periksa sintaks pada baris terkait.".to_string(),
-                            "Pastikan struktur kode dan tanda kurung sudah benar.".to_string(),
-                            "Simpan kembali berkas (Cmd + S).".to_string(),
-                        ],
-                        code_hint: err.snippet.clone(),
-                    },
-                };
+                    let line_str = err.line_number.map(|l| format!(" di baris {}", l)).unwrap_or_default();
+                    let notif_body = format!("Ditemukan {}{} pada berkas {}", err.error_type, line_str, file_name);
 
-                let _ = app_inner.emit("fixit-error-detected", serde_json::json!({
-                    "error": err,
-                    "explanation": explanation
-                }));
+                    let _ = app_inner
+                        .notification()
+                        .builder()
+                        .title("FixIt: Ada Error Terdeteksi")
+                        .body(&notif_body)
+                        .show();
 
-                if let Some(win) = app_inner.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
+                    let state: tauri::State<AppState> = app_inner.state();
+                    let conf = state.config.lock().await;
+                    let explanation = match AiClient::analyze_error(&err, &conf).await {
+                        Ok(exp) => exp,
+                        Err(_) => FixExplanation {
+                            summary: format!("Terdeteksi {} pada baris {:?}", err.error_type, err.line_number.unwrap_or(0)),
+                            why_it_happened: format!("Pesan error: {}", err.raw_message),
+                            steps: vec![
+                                "Periksa sintaks pada baris terkait.".to_string(),
+                                "Pastikan struktur kode dan tanda kurung sudah benar.".to_string(),
+                                "Simpan kembali berkas (Cmd + S).".to_string(),
+                            ],
+                            code_hint: err.snippet.clone(),
+                        },
+                    };
+
+                    let _ = app_inner.emit("fixit-error-detected", serde_json::json!({
+                        "error": err,
+                        "explanation": explanation
+                    }));
+
+                    if let Some(win) = app_inner.get_webview_window("main") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                } else {
+                    // Valid syntax after typing paused
+                    let _ = app_inner.emit("fixit-file-valid", serde_json::json!({
+                        "file_path": changed_file.to_string_lossy().to_string(),
+                        "file_name": file_name,
+                        "project": project,
+                        "editor": editor,
+                        "status": "Sintaks Valid ✓",
+                        "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+                    }));
                 }
-            }
-        });
-    });
+            });
+        },
+    );
 }
 
 pub fn run() {
@@ -303,7 +377,8 @@ pub fn run() {
             commands::get_config,
             commands::save_config,
             commands::analyze_code_error,
-            commands::ask_followup
+            commands::ask_followup,
+            commands::discover_ide_workspaces
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

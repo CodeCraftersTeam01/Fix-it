@@ -21,3 +21,11 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface FileActivity {
+  file_path: string;
+  file_name: string;
+  project: string;
+  editor: string;
+  status: string;
+  timestamp: number;
+}

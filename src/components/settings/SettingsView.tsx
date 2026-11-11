@@ -1000,6 +1000,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   FixIt memonitor perubahan file pada folder ini di latar belakang. Saat kamu menyimpan berkas (Cmd + S) dan terjadi kesalahan sintaks (PHP, JS, Python, JSON), popup panduan perbaikan akan muncul secara otomatis.
                 </div>
 
+                <div className="flex items-center justify-between pt-1">
+                  <div className="text-[11px] font-mono text-white/40">
+                    {watchedPaths.length} Workspace Aktif
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { invoke } = await import("@tauri-apps/api/core");
+                        const discovered = await invoke<string[]>("discover_ide_workspaces");
+                        if (discovered && discovered.length > 0) {
+                          const set = new Set([...watchedPaths, ...discovered]);
+                          const next = Array.from(set);
+                          setWatchedPaths(next);
+                          handleSaveAll();
+                        }
+                      } catch {}
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs text-white/80 font-mono flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <RefreshCw size={12} /> Auto-Deteksi dari IDE (Antigravity, VS Code, Cursor, Kiro)
+                  </button>
+                </div>
+
                 <div className="space-y-2 pt-2">
                   {watchedPaths.map((path, idx) => (
                     <div
