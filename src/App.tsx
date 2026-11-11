@@ -203,6 +203,7 @@ export function App() {
       onSendMessage={handleSendMessage}
       onClose={handleClose}
       onExpand={handleExpand}
+      onOpenSettings={handleOpenSettings}
       onSimulateError={handleSimulateError}
       onClearError={handleClearError}
       isLoading={isLoading}

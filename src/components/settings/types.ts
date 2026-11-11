@@ -14,14 +14,17 @@ export interface CustomProvider {
   available_models: ProviderModel[];
 }
 
-export interface DefaultProviderInfo {
+export interface AIProvider {
   id: string;
   name: string;
-  connections: number;
-  badge: string;
-  badgeType?: 'primary' | 'rpm' | 'chat' | 'lpu';
-  iconType: 'sparkle' | 'cpu' | 'alert' | 'cube';
-  defaultModel: string;
+  category: 'custom' | 'default';
+  protocol: 'openai' | 'anthropic' | 'gemini';
+  base_url: string;
+  api_keys: string[];
+  active_model: string;
+  available_models: ProviderModel[];
+  badge?: string;
+  connectionsCount?: number;
 }
 
 export interface AppSettings {
@@ -33,4 +36,3 @@ export interface AppSettings {
   active_provider?: string;
   custom_providers?: CustomProvider[];
 }
-

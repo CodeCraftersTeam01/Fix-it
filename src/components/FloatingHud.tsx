@@ -1,8 +1,8 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect } from "react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
-import { SettingsModal, AppSettings } from "./SettingsModal";
+import { AppSettings } from "./SettingsModal";
 import { CodeError, FixExplanation, ChatMessage } from "../types";
 
 interface FloatingHudProps {
@@ -12,11 +12,12 @@ interface FloatingHudProps {
   onSendMessage: (text: string) => void;
   onClose: () => void;
   onExpand?: () => void;
+  onOpenSettings?: () => void;
   onSimulateError: () => void;
   onClearError: () => void;
   isLoading?: boolean;
-  settings: AppSettings;
-  onSaveSettings: (settings: AppSettings) => void;
+  settings?: AppSettings;
+  onSaveSettings?: (settings: AppSettings) => void;
 }
 
 export const FloatingHud: React.FC<FloatingHudProps> = ({
@@ -26,14 +27,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   onSendMessage,
   onClose,
   onExpand,
+  onOpenSettings,
   onSimulateError,
   onClearError,
   isLoading = false,
   settings,
-  onSaveSettings,
+  onSaveSettings: _onSaveSettings,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -72,32 +73,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       {/* Top Header Bar (Only region allowed for dragging) */}
       <HeaderBar
         onClose={onClose}
-        onExpand={() => {
-          setIsSettingsOpen(true);
-          try {
-            import("@tauri-apps/api/core").then(({ invoke }) => {
-              invoke("open_settings_window").catch(() => {});
-            });
-          } catch {}
-          onExpand?.();
-        }}
-        onOpenSettings={() => {
-          setIsSettingsOpen(true);
-          try {
-            import("@tauri-apps/api/core").then(({ invoke }) => {
-              invoke("open_settings_window").catch(() => {});
-            });
-          } catch {}
-        }}
+        onExpand={onExpand}
+        onOpenSettings={onOpenSettings}
         onStartDrag={handleStartDrag}
-      />
-
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onSave={onSaveSettings}
       />
 
       {/* Greeting Title */}
@@ -143,7 +121,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               <p className="text-[13px] text-white/70 leading-relaxed font-normal">
                 Fokus ngoding aja. Kalau ada error sintaks atau runtime macet, solusinya langsung muncul di sini.
               </p>
-              {settings.watched_paths && settings.watched_paths.length > 0 && (
+              {settings?.watched_paths && settings.watched_paths.length > 0 && (
                 <div className="text-[11px] font-mono text-white/35 truncate pt-1 border-t border-white/[0.04]">
                   📁 {settings.watched_paths[0]}
                 </div>
