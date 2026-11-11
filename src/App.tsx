@@ -1,33 +1,37 @@
 import { useState, useEffect } from "react";
 import { FloatingHud } from "./components/FloatingHud";
+import { AppSettings } from "./components/SettingsModal";
 import { CodeError, FixExplanation, ChatMessage } from "./types";
 
 export function App() {
-  const [currentError, setCurrentError] = useState<CodeError | null>({
-    file_path: "app/Http/Controllers/StudentController.php",
-    line_number: 28,
-    error_type: "ParseError",
-    raw_message: "syntax error, unexpected token ';', expecting ')'",
-    project_name: "Praktikum-Web",
-  });
-
-  const [explanation, setExplanation] = useState<FixExplanation | null>({
-    summary: "Sintaks penutupan tanda kurung fungsi belum lengkap di baris 28.",
-    why_it_happened:
-      "PHP mengharapkan tanda kurung tutup ')' sebelum titik koma ';' saat mendeklarasikan parameter atau kondisi.",
-    steps: [
-      "Periksa pemanggilan method atau fungsi di baris 28.",
-      "Pastikan setiap kurung buka '(' memiliki pasangan kurung tutup ')'.",
-      "Simpan file kembali (Cmd + S) setelah menambahkan tanda kurung tutup.",
-    ],
-    code_hint: "$data = Student::where('nim', $nim)->first();",
-  });
-
+  const [currentError, setCurrentError] = useState<CodeError | null>(null);
+  const [explanation, setExplanation] = useState<FixExplanation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [settings, setSettings] = useState<AppSettings>({
+    openai_base_url: "https://api.openai.com/v1",
+    openai_api_key: "",
+    model_name: "gpt-4o-mini",
+    idle_delay_ms: 2500,
+    watched_paths: ["/Users/arjunalanangadiwarsana/Herd/FixIt"],
+  });
+
   useEffect(() => {
-    // Listen to Tauri events if in Tauri environment
+    // 1. Try to load config from Tauri backend
+    const loadConfig = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const conf = await invoke<AppSettings>("get_config");
+        if (conf) {
+          setSettings(conf);
+        }
+      } catch {
+        // Fallback in browser
+      }
+    };
+
+    // 2. Listen to live error events from Tauri background watcher
     const setupTauriEvents = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -43,32 +47,60 @@ export function App() {
       }
     };
 
+    loadConfig();
     setupTauriEvents();
   }, []);
 
   const handleClose = async () => {
     try {
-      const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      const appWindow = getCurrentWebviewWindow();
-      await appWindow.hide();
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const appWindow = getCurrentWindow();
+      await appWindow.close();
     } catch {
       console.log("HUD closed in browser mode");
     }
   };
 
-  const handleExpand = async () => {
+  const handleSaveSettings = async (newSettings: AppSettings) => {
+    setSettings(newSettings);
     try {
-      const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      const appWindow = getCurrentWebviewWindow();
-      const isMax = await appWindow.isMaximized();
-      if (isMax) {
-        await appWindow.unmaximize();
-      } else {
-        await appWindow.maximize();
-      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("save_config", { newConfig: newSettings });
     } catch {
-      console.log("HUD expanded in browser mode");
+      console.log("Settings saved in local state");
     }
+  };
+
+  const handleSimulateError = () => {
+    setIsLoading(true);
+    setTimeout(() => {
+      setCurrentError({
+        file_path: "app/Http/Controllers/StudentController.php",
+        line_number: 28,
+        error_type: "ParseError",
+        raw_message: "syntax error, unexpected token ';', expecting ')'",
+        project_name: "Praktikum-Web",
+      });
+
+      setExplanation({
+        summary: "Sintaks penutupan tanda kurung fungsi belum lengkap di baris 28.",
+        why_it_happened:
+          "PHP mengharapkan tanda kurung tutup ')' sebelum titik koma ';' saat mendeklarasikan parameter atau pemanggilan method berantai.",
+        steps: [
+          "Periksa pemanggilan method atau fungsi di baris 28.",
+          "Pastikan setiap kurung buka '(' memiliki pasangan kurung tutup ')'.",
+          "Simpan file kembali (Cmd + S) setelah menambahkan tanda kurung tutup.",
+        ],
+        code_hint: "$data = Student::where('nim', $nim)->first();",
+      });
+
+      setIsLoading(false);
+    }, 600);
+  };
+
+  const handleClearError = () => {
+    setCurrentError(null);
+    setExplanation(null);
   };
 
   const handleSendMessage = async (text: string) => {
@@ -82,20 +114,45 @@ export function App() {
     setIsLoading(true);
 
     try {
-      // In Tauri mode: call Rust command `ask_followup`
-      // Fallback in web preview:
-      setTimeout(() => {
-        const replyMsg: ChatMessage = {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const reply = await invoke<string>("ask_followup", { question: text });
+      setMessages((prev) => [
+        ...prev,
+        {
           id: (Date.now() + 1).toString(),
           sender: "ai",
-          text: `Di baris 28, pastikan kamu menutup parameter sebelum titik koma. Contohnya: \`->first()\` bukan \`->first;\`. Coba cek kembali kodenya ya!`,
+          text: reply,
           timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, replyMsg]);
-        setIsLoading(false);
-      }, 700);
-    } catch {
+        },
+      ]);
       setIsLoading(false);
+    } catch {
+      // Fallback response for demonstration
+      setTimeout(() => {
+        let replyText = "Halo! Aku FixIt AI Agent. ";
+        const lower = text.toLowerCase();
+        if (lower.includes("cara kerja") || lower.includes("gimana")) {
+          replyText +=
+            "Aku memantau folder kodinganmu di latar belakang. Saat kamu berhenti mengetik (jeda ~2.5s) dan ada error sintaks atau runtime, aku akan otomatis memunculkan notifikasi dan langkah perbaikannya.";
+        } else if (lower.includes("error") || lower.includes("fix")) {
+          replyText +=
+            "Jika ada error di kodinganmu, cukup simpan berkas di IDE (Cmd + S). Aku akan mendeteksi baris dan jenis errornya untuk memandu langkah penyelesaiannya.";
+        } else {
+          replyText +=
+            "Ada yang bisa aku bantu untuk praktikum kodingmu hari ini?";
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            sender: "ai",
+            text: replyText,
+            timestamp: Date.now(),
+          },
+        ]);
+        setIsLoading(false);
+      }, 500);
     }
   };
 
@@ -106,11 +163,13 @@ export function App() {
       messages={messages}
       onSendMessage={handleSendMessage}
       onClose={handleClose}
-      onExpand={handleExpand}
+      onSimulateError={handleSimulateError}
+      onClearError={handleClearError}
       isLoading={isLoading}
+      settings={settings}
+      onSaveSettings={handleSaveSettings}
     />
   );
 }
 
 export default App;
-

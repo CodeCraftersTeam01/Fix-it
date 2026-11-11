@@ -66,3 +66,4 @@ npm test
 # Pengujian Modul Rust Core
 cd src-tauri && cargo test
 ```
+
