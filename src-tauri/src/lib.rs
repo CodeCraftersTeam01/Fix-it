@@ -10,6 +10,7 @@ pub mod watcher;
 use ai_client::{AiClient, FixExplanation};
 use config::AppConfig;
 use diagnostics::DiagnosticsParser;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
@@ -19,9 +20,158 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
 use watcher::SmartIdleWatcher;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct ActiveErrorRecord {
+    pub error: diagnostics::CodeError,
+    pub explanation: ai_client::FixExplanation,
+    pub hit_count: u32,
+    pub is_looping: bool,
+    pub updated_at: u64,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Mutex<AppConfig>>,
+    pub flood_guard: Arc<Mutex<flood_guard::FloodGuard>>,
+    pub active_errors: Arc<Mutex<HashMap<String, ActiveErrorRecord>>>,
+}
+
+impl AppState {
+    pub fn new(config: AppConfig) -> Self {
+        Self {
+            config: Arc::new(Mutex::new(config)),
+            flood_guard: Arc::new(Mutex::new(flood_guard::FloodGuard::new())),
+            active_errors: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn with_flood_guard(config: AppConfig, flood_guard: flood_guard::FloodGuard) -> Self {
+        Self {
+            config: Arc::new(Mutex::new(config)),
+            flood_guard: Arc::new(Mutex::new(flood_guard)),
+            active_errors: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub async fn add_or_update_error(
+        &self,
+        err: diagnostics::CodeError,
+        explanation: ai_client::FixExplanation,
+        hit_count: u32,
+        is_looping: bool,
+    ) -> ActiveErrorRecord {
+        let mut errors = self.active_errors.lock().await;
+        let norm_key = err.file_path.trim().replace('\\', "/");
+
+        let existing_key = errors
+            .keys()
+            .find(|k| path_matches(k, &err.file_path))
+            .cloned();
+        let key = existing_key.unwrap_or(norm_key);
+
+        let record = ActiveErrorRecord {
+            error: err,
+            explanation,
+            hit_count,
+            is_looping,
+            updated_at: current_timestamp(),
+        };
+
+        errors.insert(key, record.clone());
+        record
+    }
+
+    pub async fn get_error_for_file(&self, file_path: &str) -> Option<ActiveErrorRecord> {
+        let errors = self.active_errors.lock().await;
+        errors
+            .iter()
+            .find(|(k, _)| path_matches(k, file_path))
+            .map(|(_, v)| v.clone())
+    }
+
+    pub async fn resolve_error(&self, file_path: &str) -> bool {
+        let mut fg = self.flood_guard.lock().await;
+        fg.reset_file(file_path);
+        drop(fg);
+
+        let mut errors = self.active_errors.lock().await;
+        let mut removed = false;
+        errors.retain(|k, _| {
+            let m = path_matches(k, file_path);
+            if m {
+                removed = true;
+            }
+            !m
+        });
+        removed
+    }
+
+    pub async fn clear_all_errors(&self) {
+        let mut fg = self.flood_guard.lock().await;
+        *fg = flood_guard::FloodGuard::new();
+        drop(fg);
+
+        let mut errors = self.active_errors.lock().await;
+        errors.clear();
+    }
+
+    pub async fn evaluate_flood(
+        &self,
+        file: &str,
+        line: Option<usize>,
+        err_type: &str,
+        msg: &str,
+    ) -> flood_guard::FloodAction {
+        let mut fg = self.flood_guard.lock().await;
+        fg.evaluate(file, line, err_type, msg)
+    }
+
+    pub async fn get_all_active_errors(&self) -> Vec<ActiveErrorRecord> {
+        let errors = self.active_errors.lock().await;
+        errors.values().cloned().collect()
+    }
+}
+
+pub fn current_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+pub fn path_matches(path1: &str, path2: &str) -> bool {
+    let p1 = path1.trim().replace('\\', "/");
+    let p2 = path2.trim().replace('\\', "/");
+    if p1.is_empty() || p2.is_empty() {
+        return false;
+    }
+    if p1 == p2 {
+        return true;
+    }
+    if p1.ends_with(&p2) && p1[..p1.len() - p2.len()].ends_with('/') {
+        return true;
+    }
+    if p2.ends_with(&p1) && p2[..p2.len() - p1.len()].ends_with('/') {
+        return true;
+    }
+    false
+}
+
+pub fn create_fallback_explanation(err: &diagnostics::CodeError) -> FixExplanation {
+    FixExplanation {
+        summary: format!(
+            "Terdeteksi {} pada baris {:?}",
+            err.error_type,
+            err.line_number.unwrap_or(0)
+        ),
+        why_it_happened: format!("Pesan error runtime/interpreter: {}", err.raw_message),
+        steps: vec![
+            "Periksa baris kode dan fungsi yang dipanggil.".to_string(),
+            "Pastikan tipe data, nama metode, atau query database sudah benar.".to_string(),
+            "Simpan kembali berkas dan muat ulang halaman.".to_string(),
+        ],
+        code_hint: err.snippet.clone(),
+    }
 }
 
 pub fn init_env_path() {
@@ -355,6 +505,38 @@ pub mod commands {
             Err(format!("HTTP {} Error", status.as_u16()))
         }
     }
+
+    #[tauri::command]
+    pub async fn clear_active_error(
+        app: tauri::AppHandle,
+        state: tauri::State<'_, AppState>,
+        file_path: Option<String>,
+    ) -> Result<(), String> {
+        if let Some(ref path) = file_path {
+            state.resolve_error(path).await;
+            let _ = app.emit(
+                "fixit-error-resolved",
+                serde_json::json!({
+                    "file_path": path
+                }),
+            );
+        } else {
+            state.clear_all_errors().await;
+            let _ = app.emit("fixit-reset-standby", ());
+        }
+
+        let sync_errors = state.get_all_active_errors().await;
+        let _ = app.emit("fixit-errors-sync", &sync_errors);
+
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn get_active_errors(
+        state: tauri::State<'_, AppState>,
+    ) -> Result<Vec<ActiveErrorRecord>, String> {
+        Ok(state.get_all_active_errors().await)
+    }
 }
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -512,6 +694,21 @@ pub fn crash_info_to_code_error(
     }
 }
 
+pub async fn resolve_file_error(app_handle: &AppHandle, file_path: &str) {
+    let state: tauri::State<AppState> = app_handle.state();
+    state.resolve_error(file_path).await;
+
+    let _ = app_handle.emit(
+        "fixit-error-resolved",
+        serde_json::json!({
+            "file_path": file_path
+        }),
+    );
+
+    let sync_errors = state.get_all_active_errors().await;
+    let _ = app_handle.emit("fixit-errors-sync", &sync_errors);
+}
+
 pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics::CodeError) {
     let p = std::path::Path::new(&err.file_path);
     let file_name = p
@@ -528,80 +725,123 @@ pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics
         err.project_name = Some(project);
     }
 
-    let editor = detect_active_ide();
-    let line_str = err
-        .line_number
-        .map(|l| format!(" di baris {}", l))
-        .unwrap_or_default();
-    let notif_body = format!(
-        "Ditemukan {}{} pada berkas {}",
-        err.error_type, line_str, file_name
-    );
-
-    let _ = app_handle
-        .notification()
-        .builder()
-        .title("FixIt: Ada Error Terdeteksi")
-        .body(&notif_body)
-        .show();
-
-    // Emit analyzing/thinking status immediately to the HUD
-    let _ = app_handle.emit(
-        "fixit-error-analyzing",
-        serde_json::json!({
-            "file_name": file_name,
-            "editor": editor,
-            "line": err.line_number,
-            "error_type": err.error_type,
-            "file_path": err.file_path,
-        }),
-    );
-
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.set_focus();
-    }
-
     let state: tauri::State<AppState> = app_handle.state();
-    let conf = state.config.lock().await;
-    let explanation = match AiClient::analyze_error(&err, &conf).await {
-        Ok(exp) => exp,
-        Err(e) => {
-            eprintln!("FixIt AI Analysis Error: {}", e);
-            FixExplanation {
-                summary: format!(
-                    "Terdeteksi {} pada baris {:?}",
-                    err.error_type,
-                    err.line_number.unwrap_or(0)
-                ),
-                why_it_happened: format!("Pesan error runtime/interpreter: {}", err.raw_message),
-                steps: vec![
-                    "Periksa baris kode dan fungsi yang dipanggil.".to_string(),
-                    "Pastikan tipe data, nama metode, atau query database sudah benar.".to_string(),
-                    "Simpan kembali berkas dan muat ulang halaman.".to_string(),
-                ],
-                code_hint: err.snippet.clone(),
+    let flood_action = state
+        .evaluate_flood(
+            &err.file_path,
+            err.line_number,
+            &err.error_type,
+            &err.raw_message,
+        )
+        .await;
+
+    match flood_action {
+        flood_guard::FloodAction::CachedOrIgnored => {
+            // Drop redundant duplicate within debounce window
+            return;
+        }
+        flood_guard::FloodAction::LoopThrottled { hit_count } => {
+            // Rapid repeat / loop detected: Do NOT call AI again!
+            let record = if let Some(existing) = state.get_error_for_file(&err.file_path).await {
+                state
+                    .add_or_update_error(err.clone(), existing.explanation, hit_count, true)
+                    .await
+            } else {
+                let fallback = create_fallback_explanation(&err);
+                state
+                    .add_or_update_error(err.clone(), fallback, hit_count, true)
+                    .await
+            };
+
+            let _ = app_handle.emit(
+                "fixit-error-detected",
+                serde_json::json!({
+                    "error": record.error,
+                    "explanation": record.explanation,
+                    "hit_count": record.hit_count,
+                    "is_looping": true
+                }),
+            );
+
+            let sync_errors = state.get_all_active_errors().await;
+            let _ = app_handle.emit("fixit-errors-sync", &sync_errors);
+
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.show();
             }
         }
-    };
+        flood_guard::FloodAction::ProcessFresh => {
+            let editor = detect_active_ide();
+            let line_str = err
+                .line_number
+                .map(|l| format!(" di baris {}", l))
+                .unwrap_or_default();
+            let notif_body = format!(
+                "Ditemukan {}{} pada berkas {}",
+                err.error_type, line_str, file_name
+            );
 
-    let _ = app_handle.emit(
-        "fixit-error-detected",
-        serde_json::json!({
-            "error": err,
-            "explanation": explanation
-        }),
-    );
+            let _ = app_handle
+                .notification()
+                .builder()
+                .title("FixIt: Ada Error Terdeteksi")
+                .body(&notif_body)
+                .show();
 
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.show();
+            // Emit analyzing/thinking status immediately to the HUD
+            let _ = app_handle.emit(
+                "fixit-error-analyzing",
+                serde_json::json!({
+                    "file_name": file_name,
+                    "editor": editor,
+                    "line": err.line_number,
+                    "error_type": err.error_type,
+                    "file_path": err.file_path,
+                }),
+            );
+
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+
+            let conf = state.config.lock().await.clone();
+            let explanation = match AiClient::analyze_error(&err, &conf).await {
+                Ok(exp) => exp,
+                Err(e) => {
+                    eprintln!("FixIt AI Analysis Error: {}", e);
+                    create_fallback_explanation(&err)
+                }
+            };
+
+            let record = state
+                .add_or_update_error(err.clone(), explanation, 1, false)
+                .await;
+
+            let _ = app_handle.emit(
+                "fixit-error-detected",
+                serde_json::json!({
+                    "error": record.error,
+                    "explanation": record.explanation,
+                    "hit_count": 1,
+                    "is_looping": false
+                }),
+            );
+
+            let sync_errors = state.get_all_active_errors().await;
+            let _ = app_handle.emit("fixit-errors-sync", &sync_errors);
+
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.show();
+            }
+        }
     }
 }
 
 pub fn setup_background_service(
     app: &AppHandle,
     config: &AppConfig,
-    debounce_cache: Arc<std::sync::Mutex<DebounceCache>>,
+    _debounce_cache: Arc<std::sync::Mutex<DebounceCache>>,
 ) {
     let app_handle = app.clone();
     let idle_ms = config.idle_delay_ms;
@@ -617,7 +857,6 @@ pub fn setup_background_service(
     let app_for_log = app_handle.clone();
 
     let log_tailer = Arc::new(std::sync::Mutex::new(runtime_log_watcher::LogTailer::new()));
-    let debounce_for_log = Arc::clone(&debounce_cache);
     let watched_paths_clone = paths.clone();
 
     let _ = watcher.watch_paths(
@@ -644,7 +883,7 @@ pub fn setup_background_service(
                 "project": project,
                 "editor": editor,
                 "status": "Sedang Menulis...",
-                "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+                "timestamp": current_timestamp()
             }));
         },
         // 2. Idle debounce callback (evaluates code after student pauses typing)
@@ -668,14 +907,17 @@ pub fn setup_background_service(
                     err.project_name = Some(project.clone());
                     process_and_emit_error(&app_inner, err).await;
                 } else {
+                    let file_path_str = changed_file.to_string_lossy().to_string();
+                    resolve_file_error(&app_inner, &file_path_str).await;
+
                     // Valid syntax after typing paused
                     let _ = app_inner.emit("fixit-file-valid", serde_json::json!({
-                        "file_path": changed_file.to_string_lossy().to_string(),
+                        "file_path": file_path_str,
                         "file_name": file_name,
                         "project": project,
                         "editor": editor,
                         "status": "Sintaks Valid ✓",
-                        "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
+                        "timestamp": current_timestamp()
                     }));
                 }
             });
@@ -705,27 +947,11 @@ pub fn setup_background_service(
                     &entry,
                     workspace_root.as_deref(),
                 ) {
-                    let line_opt = if crash_info.line_number > 0 {
-                        Some(crash_info.line_number as usize)
-                    } else {
-                        None
-                    };
-
-                    let should_process = {
-                        if let Ok(mut debounce) = debounce_for_log.lock() {
-                            debounce.check_and_record(&crash_info.file_path, line_opt)
-                        } else {
-                            false
-                        }
-                    };
-
-                    if should_process {
-                        let code_error = crash_info_to_code_error(&crash_info);
-                        let app_inner = app_for_log.clone();
-                        tauri::async_runtime::spawn(async move {
-                            process_and_emit_error(&app_inner, code_error).await;
-                        });
-                    }
+                    let code_error = crash_info_to_code_error(&crash_info);
+                    let app_inner = app_for_log.clone();
+                    tauri::async_runtime::spawn(async move {
+                        process_and_emit_error(&app_inner, code_error).await;
+                    });
                 }
             }
         },
@@ -735,9 +961,7 @@ pub fn setup_background_service(
 pub fn run() {
     init_env_path();
     let initial_config = AppConfig::load();
-    let app_state = AppState {
-        config: Arc::new(Mutex::new(initial_config.clone())),
-    };
+    let app_state = AppState::new(initial_config.clone());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -759,7 +983,9 @@ pub fn run() {
             commands::discover_ide_workspaces,
             commands::fetch_models_from_provider,
             commands::toggle_hud_expand,
-            commands::ping_provider
+            commands::ping_provider,
+            commands::clear_active_error,
+            commands::get_active_errors
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -808,29 +1034,12 @@ pub fn run() {
 
             // Pipeline 2: Local Loopback Ingestion on 127.0.0.1:45678
             let app_for_endpoint = app.handle().clone();
-            let debounce_for_endpoint = Arc::clone(&debounce_cache);
             runtime_endpoint::start_loopback_reporter(45678, move |crash_info| {
-                let line_opt = if crash_info.line_number > 0 {
-                    Some(crash_info.line_number as usize)
-                } else {
-                    None
-                };
-
-                let should_process = {
-                    if let Ok(mut debounce) = debounce_for_endpoint.lock() {
-                        debounce.check_and_record(&crash_info.file_path, line_opt)
-                    } else {
-                        false
-                    }
-                };
-
-                if should_process {
-                    let code_error = crash_info_to_code_error(&crash_info);
-                    let app_inner = app_for_endpoint.clone();
-                    tauri::async_runtime::spawn(async move {
-                        process_and_emit_error(&app_inner, code_error).await;
-                    });
-                }
+                let code_error = crash_info_to_code_error(&crash_info);
+                let app_inner = app_for_endpoint.clone();
+                tauri::async_runtime::spawn(async move {
+                    process_and_emit_error(&app_inner, code_error).await;
+                });
             });
 
             Ok(())
@@ -876,5 +1085,200 @@ mod tests {
         assert_eq!(err.raw_message, "SQLSTATE[HY000]: General error: 1 no such table: users");
         assert_eq!(err.snippet, Some("> 28 | return User::all();".to_string()));
         assert_eq!(err.project_name, Some("Models".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_multi_error_registry_multiple_files() {
+        let state = AppState::new(AppConfig::default());
+
+        let err_a = diagnostics::CodeError {
+            file_path: "/var/www/app/Http/Controllers/AuthController.php".to_string(),
+            line_number: Some(45),
+            error_type: "ParseError".to_string(),
+            raw_message: "syntax error, unexpected token".to_string(),
+            snippet: Some("return view('login');".to_string()),
+            project_name: Some("FixIt".to_string()),
+        };
+        let exp_a = FixExplanation {
+            summary: "Syntax error in AuthController".to_string(),
+            why_it_happened: "Missing semicolon".to_string(),
+            steps: vec!["Add semicolon".to_string()],
+            code_hint: None,
+        };
+
+        let err_b = diagnostics::CodeError {
+            file_path: "/var/www/app/Models/User.php".to_string(),
+            line_number: Some(28),
+            error_type: "QueryException".to_string(),
+            raw_message: "no such table: users".to_string(),
+            snippet: Some("return User::all();".to_string()),
+            project_name: Some("FixIt".to_string()),
+        };
+        let exp_b = FixExplanation {
+            summary: "Database error in User".to_string(),
+            why_it_happened: "Migration missing".to_string(),
+            steps: vec!["Run php artisan migrate".to_string()],
+            code_hint: None,
+        };
+
+        state.add_or_update_error(err_a, exp_a, 1, false).await;
+        state.add_or_update_error(err_b, exp_b, 1, false).await;
+
+        let all = state.get_all_active_errors().await;
+        assert_eq!(all.len(), 2, "Both files should be present in multi-error registry");
+
+        let auth_err = state.get_error_for_file("app/Http/Controllers/AuthController.php").await;
+        assert!(auth_err.is_some());
+        assert_eq!(auth_err.unwrap().error.error_type, "ParseError");
+
+        let user_err = state.get_error_for_file("app/Models/User.php").await;
+        assert!(user_err.is_some());
+        assert_eq!(user_err.unwrap().error.error_type, "QueryException");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_file_leaves_remaining_files() {
+        let state = AppState::new(AppConfig::default());
+
+        let err_a = diagnostics::CodeError {
+            file_path: "/var/www/app/Http/Controllers/AuthController.php".to_string(),
+            line_number: Some(45),
+            error_type: "ParseError".to_string(),
+            raw_message: "syntax error".to_string(),
+            snippet: None,
+            project_name: None,
+        };
+        let exp_a = FixExplanation {
+            summary: "Auth error".to_string(),
+            why_it_happened: "reason".to_string(),
+            steps: vec![],
+            code_hint: None,
+        };
+
+        let err_b = diagnostics::CodeError {
+            file_path: "/var/www/app/Models/User.php".to_string(),
+            line_number: Some(28),
+            error_type: "QueryException".to_string(),
+            raw_message: "db error".to_string(),
+            snippet: None,
+            project_name: None,
+        };
+        let exp_b = FixExplanation {
+            summary: "User error".to_string(),
+            why_it_happened: "reason".to_string(),
+            steps: vec![],
+            code_hint: None,
+        };
+
+        state.add_or_update_error(err_a, exp_a, 1, false).await;
+        state.add_or_update_error(err_b, exp_b, 1, false).await;
+
+        // Resolve file A
+        let removed = state.resolve_error("app/Http/Controllers/AuthController.php").await;
+        assert!(removed, "File A error should be resolved and removed");
+
+        // File A is gone
+        assert!(state.get_error_for_file("AuthController.php").await.is_none());
+
+        // File B remains active!
+        let remaining = state.get_all_active_errors().await;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].error.file_path, "/var/www/app/Models/User.php");
+
+        // Resolve file B
+        state.resolve_error("app/Models/User.php").await;
+        assert_eq!(state.get_all_active_errors().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_loop_throttle_updates_hit_count_without_requerying_ai() {
+        let state = AppState::new(AppConfig::default());
+        let file = "/var/www/app/Http/Controllers/PollingController.php";
+        let line = Some(15);
+        let err_type = "ErrorException";
+        let msg = "Undefined variable: pollInterval";
+
+        // 1. First occurrence is fresh
+        let action1 = state.evaluate_flood(file, line, err_type, msg).await;
+        assert_eq!(action1, flood_guard::FloodAction::ProcessFresh);
+
+        let initial_exp = FixExplanation {
+            summary: "Original AI explanation for PollingController".to_string(),
+            why_it_happened: "Variable undefined".to_string(),
+            steps: vec!["Initialize $pollInterval".to_string()],
+            code_hint: Some("$pollInterval = 500;".to_string()),
+        };
+
+        let err = diagnostics::CodeError {
+            file_path: file.to_string(),
+            line_number: line,
+            error_type: err_type.to_string(),
+            raw_message: msg.to_string(),
+            snippet: None,
+            project_name: None,
+        };
+
+        state.add_or_update_error(err.clone(), initial_exp.clone(), 1, false).await;
+
+        // 2. Second rapid occurrence within 5s returns LoopThrottled { hit_count: 2 }
+        let action2 = state.evaluate_flood(file, line, err_type, msg).await;
+        assert_eq!(action2, flood_guard::FloodAction::LoopThrottled { hit_count: 2 });
+
+        // Update record with existing explanation, hit_count = 2, is_looping = true
+        let existing = state.get_error_for_file(file).await.unwrap();
+        state.add_or_update_error(err.clone(), existing.explanation, 2, true).await;
+
+        let record = state.get_error_for_file(file).await.unwrap();
+        assert_eq!(record.hit_count, 2);
+        assert!(record.is_looping);
+        assert_eq!(record.explanation.summary, "Original AI explanation for PollingController");
+
+        // 3. Third rapid burst
+        let action3 = state.evaluate_flood(file, line, err_type, msg).await;
+        assert_eq!(action3, flood_guard::FloodAction::LoopThrottled { hit_count: 3 });
+
+        // 4. Resolving file resets history
+        state.resolve_error(file).await;
+        assert!(state.get_error_for_file(file).await.is_none());
+
+        // Subsequent error after resolution is ProcessFresh
+        let action_fresh = state.evaluate_flood(file, line, err_type, msg).await;
+        assert_eq!(action_fresh, flood_guard::FloodAction::ProcessFresh);
+    }
+
+    #[tokio::test]
+    async fn test_clear_all_errors() {
+        let state = AppState::new(AppConfig::default());
+        let err = diagnostics::CodeError {
+            file_path: "app/Models/Test.php".to_string(),
+            line_number: Some(10),
+            error_type: "Error".to_string(),
+            raw_message: "some error".to_string(),
+            snippet: None,
+            project_name: None,
+        };
+        let exp = FixExplanation {
+            summary: "summary".to_string(),
+            why_it_happened: "why".to_string(),
+            steps: vec![],
+            code_hint: None,
+        };
+
+        state.add_or_update_error(err, exp, 1, false).await;
+        assert_eq!(state.get_all_active_errors().await.len(), 1);
+
+        state.clear_all_errors().await;
+        assert_eq!(state.get_all_active_errors().await.len(), 0);
+    }
+
+    #[test]
+    fn test_path_matches_utility() {
+        assert!(path_matches("app/Http/Controllers/User.php", "app/Http/Controllers/User.php"));
+        assert!(path_matches("/Users/dev/project/app/Http/Controllers/User.php", "app/Http/Controllers/User.php"));
+        assert!(path_matches("app/Http/Controllers/User.php", "/Users/dev/project/app/Http/Controllers/User.php"));
+        assert!(path_matches("User.php", "/path/to/User.php"));
+        assert!(!path_matches("SuperUser.php", "/path/to/User.php"));
+        assert!(!path_matches("/path/to/User.php", "SuperUser.php"));
+        assert!(!path_matches("", "User.php"));
     }
 }
