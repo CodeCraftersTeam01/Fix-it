@@ -3,12 +3,70 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ProviderModel {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CustomProvider {
+    pub id: String,
+    pub name: String,
+    pub protocol: String, // "openai" | "anthropic"
+    pub base_url: String,
+    #[serde(default)]
+    pub api_keys: Vec<String>,
+    #[serde(default)]
+    pub active_model: String,
+    #[serde(default)]
+    pub available_models: Vec<ProviderModel>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct AppConfig {
     pub openai_base_url: String,
     pub openai_api_key: String,
     pub model_name: String,
     pub idle_delay_ms: u64,
     pub watched_paths: Vec<String>,
+    #[serde(default = "default_active_provider")]
+    pub active_provider: String,
+    #[serde(default = "default_custom_providers")]
+    pub custom_providers: Vec<CustomProvider>,
+}
+
+fn default_active_provider() -> String {
+    "ciora".to_string()
+}
+
+fn default_custom_providers() -> Vec<CustomProvider> {
+    vec![CustomProvider {
+        id: "ciora".to_string(),
+        name: "Ciora".to_string(),
+        protocol: "openai".to_string(),
+        base_url: "https://ciora.id/v1".to_string(),
+        api_keys: vec!["sk-c89127398127367e5".to_string()],
+        active_model: "glm-5.3-flash-free".to_string(),
+        available_models: vec![
+            ProviderModel {
+                id: "glm-5.3-flash-free".to_string(),
+                name: "glm-5.3-flash-free".to_string(),
+                description: Some("Model glm-5.3-flash-free dari Ciora".to_string()),
+            },
+            ProviderModel {
+                id: "nvidia/nemotron-3.5-super-v1-free".to_string(),
+                name: "nvidia/nemotron-3.5-super-v1-free".to_string(),
+                description: Some("Model nvidia/nemotron-3.5-super-v1-free dari Ciora".to_string()),
+            },
+            ProviderModel {
+                id: "ciora-vision-free".to_string(),
+                name: "ciora-vision-free".to_string(),
+                description: Some("Model ciora-vision-free dari Ciora".to_string()),
+            },
+        ],
+    }]
 }
 
 impl Default for AppConfig {
@@ -19,6 +77,8 @@ impl Default for AppConfig {
             model_name: "gpt-4o-mini".to_string(),
             idle_delay_ms: 2500,
             watched_paths: Vec::new(),
+            active_provider: default_active_provider(),
+            custom_providers: default_custom_providers(),
         }
     }
 }

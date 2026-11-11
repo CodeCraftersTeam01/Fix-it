@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { FloatingHud } from "./components/FloatingHud";
-import { AppSettings } from "./components/SettingsModal";
+import { SettingsView } from "./components/settings/SettingsView";
+import { AppSettings } from "./components/settings/types";
 import { CodeError, FixExplanation, ChatMessage } from "./types";
 
 export function App() {
+  const isSettingsRoute = typeof window !== "undefined" && window.location.hash === "#settings";
   const [currentError, setCurrentError] = useState<CodeError | null>(null);
   const [explanation, setExplanation] = useState<FixExplanation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -12,9 +14,10 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>({
     openai_base_url: "https://api.openai.com/v1",
     openai_api_key: "",
-    model_name: "gpt-4o-mini",
+    model_name: "glm-5.3-flash-free",
     idle_delay_ms: 2500,
     watched_paths: ["/Users/arjunalanangadiwarsana/Herd/FixIt"],
+    active_provider: "ciora",
   });
 
   useEffect(() => {
@@ -42,6 +45,12 @@ export function App() {
             setExplanation(event.payload.explanation);
           }
         );
+        await listen("open-settings", async () => {
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("open_settings_window");
+          } catch {}
+        });
       } catch {
         // Running in standard browser preview
       }
@@ -66,19 +75,18 @@ export function App() {
     }
   };
 
-  const handleExpand = async () => {
+  const handleOpenSettings = async () => {
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      const appWindow = getCurrentWindow();
-      const isMax = await appWindow.isMaximized();
-      if (isMax) {
-        await appWindow.unmaximize();
-      } else {
-        await appWindow.maximize();
-      }
-    } catch (err) {
-      console.log("HUD expand error", err);
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_settings_window");
+    } catch {
+      console.log("Open settings window via Tauri fallback");
     }
+  };
+
+  const handleExpand = async () => {
+    // Top-right button ("logo minize") also opens Settings as requested
+    handleOpenSettings();
   };
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
@@ -174,6 +182,18 @@ export function App() {
       }, 400);
     }
   };
+
+  if (isSettingsRoute) {
+    return (
+      <div className="w-screen h-screen p-2 bg-transparent select-none">
+        <SettingsView
+          isWindow={true}
+          config={settings}
+          onSave={handleSaveSettings}
+        />
+      </div>
+    );
+  }
 
   return (
     <FloatingHud

@@ -58,6 +58,23 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+        if let Some(window) = app.get_webview_window("settings") {
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+        if let Some(window) = app.get_webview_window("settings") {
+            window.hide().map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
     pub async fn get_config(state: tauri::State<'_, AppState>) -> Result<AppConfig, String> {
         let conf = state.config.lock().await;
         Ok(conf.clone())
@@ -134,9 +151,10 @@ pub mod commands {
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Buka FixIt", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", "Pengaturan AI & Model...", true, None::<&str>)?;
     let hide_item = MenuItem::with_id(app, "hide", "Sembunyikan Jendela", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Keluar FixIt (Hentikan Background)", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+    let menu = Menu::with_items(app, &[&show_item, &settings_item, &hide_item, &quit_item])?;
 
     let icon = tauri::include_image!("icons/tray.png");
 
@@ -154,8 +172,18 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let _ = win.set_focus();
                     }
                 }
+                "settings" => {
+                    let _ = app.emit("open-settings", ());
+                    if let Some(win) = app.get_webview_window("settings") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                }
                 "hide" => {
                     if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.hide();
+                    }
+                    if let Some(win) = app.get_webview_window("settings") {
                         let _ = win.hide();
                     }
                 }
@@ -270,6 +298,8 @@ pub fn run() {
             commands::start_dragging,
             commands::close_window,
             commands::hide_window,
+            commands::open_settings_window,
+            commands::hide_settings_window,
             commands::get_config,
             commands::save_config,
             commands::analyze_code_error,
@@ -291,6 +321,14 @@ pub fn run() {
                         window_vibrancy::NSVisualEffectMaterial::HudWindow,
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(32.0),
+                    );
+                }
+                if let Some(settings_win) = app.get_webview_window("settings") {
+                    let _ = window_vibrancy::apply_vibrancy(
+                        &settings_win,
+                        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                        Some(window_vibrancy::NSVisualEffectState::Active),
+                        Some(24.0),
                     );
                 }
             }

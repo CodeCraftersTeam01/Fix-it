@@ -72,8 +72,23 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       {/* Top Header Bar (Only region allowed for dragging) */}
       <HeaderBar
         onClose={onClose}
-        onExpand={onExpand}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onExpand={() => {
+          setIsSettingsOpen(true);
+          try {
+            import("@tauri-apps/api/core").then(({ invoke }) => {
+              invoke("open_settings_window").catch(() => {});
+            });
+          } catch {}
+          onExpand?.();
+        }}
+        onOpenSettings={() => {
+          setIsSettingsOpen(true);
+          try {
+            import("@tauri-apps/api/core").then(({ invoke }) => {
+              invoke("open_settings_window").catch(() => {});
+            });
+          } catch {}
+        }}
         onStartDrag={handleStartDrag}
       />
 
