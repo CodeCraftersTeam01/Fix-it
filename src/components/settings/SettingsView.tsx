@@ -11,15 +11,81 @@ import {
   Trash2,
   Copy,
   Search,
-  Bot,
   ExternalLink,
   RefreshCw,
   Sparkles,
-  Zap,
-  Radio,
   AlertCircle,
+  ArrowLeft,
 } from "lucide-react";
 import { AppSettings, AIProvider, ProviderModel, CustomProvider } from "./types";
+
+/* Official Brand Vector Logos for Providers */
+const GeminiLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <path
+      d="M14 0C14 7.732 7.732 14 0 14C7.732 14 14 20.268 14 28C14 20.268 20.268 14 28 14C20.268 14 14 7.732 14 0Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+const GroqLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14.93c-2.48.47-4.73-.83-5.5-2.93H10v-2H5.06c.09-.69.28-1.37.58-2h4.36V8H6.55c1.19-2.34 3.73-3.69 6.45-3.08 2.61.59 4.54 2.8 4.78 5.48h2.02c-.34-3.8-3.07-6.9-6.8-7.38-4.32-.55-8.21 2.37-9.03 6.64-.17.88-.22 1.76-.15 2.62.29 3.51 2.57 6.49 5.86 7.47 3.32.99 6.96-.28 8.92-3.13l-1.6-1.22c-1.46 2.06-4.08 2.97-6.6 2.45z"/>
+  </svg>
+);
+
+const OpenRouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.24L18.76 8 12 11.76 5.24 8 12 4.24zM4.8 8.91l6.4 3.56v7.12l-6.4-3.56V8.91zm14.4 7.12l-6.4 3.56v-7.12l6.4-3.56v7.12z"/>
+  </svg>
+);
+
+const OpenAILogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <path d="M22.28 9.37a5.98 5.98 0 00-.51-4.89 6.07 6.07 0 00-6.47-2.83A6.06 6.06 0 0010.5 0a6.07 6.07 0 00-5.8 4.23 6.07 6.07 0 00-4.04 2.93 6.04 6.04 0 00.7 7.02 5.98 5.98 0 00.51 4.89 6.07 6.07 0 006.47 2.83A6.06 6.06 0 0013.5 24a6.07 6.07 0 005.8-4.23 6.07 6.07 0 004.04-2.93 6.04 6.04 0 00-.7-7.02zM13.5 22.45a4.53 4.53 0 01-3.18-1.32l.14-.08 5.25-3.03a.77.77 0 00.39-.67v-7.41l2.22 1.28v6.7a4.55 4.55 0 01-4.82 4.53zm-8.8-3.82a4.54 4.54 0 01-.6-3.4l.15.09 5.25 3.03a.77.77 0 00.78 0l6.42-3.7-2.22-1.28-6.42 3.7a.78.78 0 01-.78 0l-2.58-1.44zm-1.8-9.08a4.53 4.53 0 012.58-2.08v.17l5.25 3.03a.77.77 0 00.78 0l6.42-3.71v2.57l-6.42 3.7a.77.77 0 01-.78 0L4.9 9.55zm14.65 1.57l-6.42 3.7a.77.77 0 01-.78 0L9.73 13.4l2.22-1.28 6.42 3.7a.78.78 0 01.39.67v2.88l-2.22-1.28v-4.54zm2.55-2.07l-.15-.09-5.25-3.03a.77.77 0 00-.78 0L9.3 8.24l2.22 1.28 6.42-3.7a.77.77 0 01.78 0l2.58 1.49a4.54 4.54 0 01-1.2 3.74zM10.5 7.55l2.22-1.28 6.42 3.7-2.22 1.28-6.42-3.7z"/>
+  </svg>
+);
+
+const AnthropicLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <path d="M17.47 3H14.1l-6.8 18h3.37l1.52-4.14h7.02L20.73 21H24L17.47 3zm-4.13 11.45l2.43-6.62 2.43 6.62h-4.86zM6.53 3H3.16L0 21h3.37l1.1-7.14h3.53L9.1 21h3.37L6.53 3z"/>
+  </svg>
+);
+
+const OpenCodeLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <polyline points="16 18 22 12 16 6" />
+    <polyline points="8 6 2 12 8 18" />
+    <line x1="14" y1="4" x2="10" y2="20" />
+  </svg>
+);
+
+const AgnesLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fillRule="evenodd" clipRule="evenodd"/>
+  </svg>
+);
+
+const RouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect x="2" y="14" width="20" height="8" rx="2" />
+    <path d="M6 18h.01M10 18h.01" />
+    <path d="M16 14V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v10" />
+  </svg>
+);
+
+const renderProviderLogo = (provider: AIProvider, className: string = "w-4 h-4") => {
+  if (provider.id === "gemini") return <GeminiLogo className={className} />;
+  if (provider.id === "groq") return <GroqLogo className={className} />;
+  if (provider.id === "openrouter") return <OpenRouterLogo className={className} />;
+  if (provider.id === "opencode") return <OpenCodeLogo className={className} />;
+  if (provider.id === "agnes") return <AgnesLogo className={className} />;
+  if (provider.id === "larprouter") return <RouterLogo className={className} />;
+  if (provider.protocol === "anthropic") return <AnthropicLogo className={className} />;
+  return <OpenAILogo className={className} />;
+};
 
 const INITIAL_PROVIDERS: AIProvider[] = [
   // 1. Custom Provider
@@ -676,7 +742,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-xl bg-white/[0.08] text-white/90 flex items-center justify-center shrink-0 border border-white/[0.08]">
-                          <Sparkles size={15} />
+                          {activeProvider ? renderProviderLogo(activeProvider, "w-4 h-4") : <Cpu size={15} />}
                         </div>
                         <div>
                           <div className="text-[12px] font-semibold text-white/95 uppercase tracking-wider font-mono flex items-center gap-2">
@@ -794,8 +860,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             onClick={() => setSelectedProviderId(cp.id)}
                             className={`p-4 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-3 group relative border shadow-sm ${
                               isGlobalActive
-                                ? "bg-white/[0.06] border-white/20"
-                                : "bg-white/[0.02] hover:bg-white/[0.045] border-white/[0.04]"
+                                ? "bg-white/[0.06] border-white/20 ring-1 ring-white/10"
+                                : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.04] hover:border-white/15"
                             }`}
                           >
                             {/* Baris Atas: Info Provider & Tombol Aksi */}
@@ -805,10 +871,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
                                     isGlobalActive
                                       ? "bg-white/15 text-white border-white/20"
-                                      : "bg-white/[0.05] text-white/70 border-white/[0.05]"
+                                      : "bg-white/[0.05] text-white/70 border-white/[0.05] group-hover:text-white"
                                   }`}
                                 >
-                                  <Bot size={18} />
+                                  {renderProviderLogo(cp, "w-4 h-4")}
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
@@ -835,12 +901,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 >
                                   <Trash2 size={13} />
                                 </button>
-                                <button
-                                  onClick={() => setSelectedProviderId(cp.id)}
-                                  className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.1] text-white/70 group-hover:text-white font-mono transition cursor-pointer"
-                                >
-                                  Konfigurasi →
-                                </button>
                               </div>
                             </div>
 
@@ -863,7 +923,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </div>
 
                               <div
-                                className="text-[10px] text-white/40 truncate max-w-[130px] text-right font-mono"
+                                className="text-[10.5px] text-white/40 group-hover:text-white/70 transition truncate max-w-[130px] text-right font-mono"
                                 title={cp.active_model || "Tanpa model"}
                               >
                                 {cp.active_model || "Tanpa model"}
@@ -900,8 +960,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             onClick={() => setSelectedProviderId(dp.id)}
                             className={`p-3.5 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-2.5 group relative border shadow-sm ${
                               isGlobalActive
-                                ? "bg-white/[0.06] border-white/20"
-                                : "bg-white/[0.02] hover:bg-white/[0.04] border-white/[0.04]"
+                                ? "bg-white/[0.06] border-white/20 ring-1 ring-white/10"
+                                : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.04] hover:border-white/15"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -910,16 +970,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
                                     isGlobalActive
                                       ? "bg-white/15 text-white border-white/20"
-                                      : "bg-white/[0.05] text-white/70 border-white/[0.05]"
+                                      : "bg-white/[0.05] text-white/70 border-white/[0.05] group-hover:text-white"
                                   }`}
                                 >
-                                  {dp.id === "gemini" ? (
-                                    <Sparkles size={15} />
-                                  ) : dp.id === "groq" ? (
-                                    <Zap size={15} />
-                                  ) : (
-                                    <Radio size={15} />
-                                  )}
+                                  {renderProviderLogo(dp, "w-4 h-4")}
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
@@ -933,17 +987,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     )}
                                   </div>
                                   <div className="text-[10px] text-white/35 font-mono mt-0.5 truncate">
-                                    {dp.badge || dp.protocol.toUpperCase()}
+                                    {dp.base_url.replace("https://", "").split("/")[0]}
                                   </div>
                                 </div>
                               </div>
-
-                              <button
-                                onClick={() => setSelectedProviderId(dp.id)}
-                                className="text-[10px] px-2 py-1 rounded-lg bg-white/[0.04] group-hover:bg-white/[0.09] text-white/50 group-hover:text-white font-mono shrink-0 transition cursor-pointer"
-                              >
-                                Detail →
-                              </button>
                             </div>
 
                             <div className="pt-2 border-t border-white/[0.03] flex items-center justify-between text-[10px] font-mono gap-2">
@@ -964,7 +1011,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </div>
 
                               <div
-                                className="text-white/35 truncate max-w-[130px] text-right font-mono"
+                                className="text-white/35 group-hover:text-white/60 transition truncate max-w-[130px] text-right font-mono"
                                 title={dp.active_model}
                               >
                                 {dp.active_model}
@@ -981,10 +1028,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 selectedProvider && (
                   <div className="space-y-4 max-w-4xl">
                     {/* Header Card */}
-                    <div className="p-4 rounded-2xl bg-white/[0.025] flex items-center justify-between flex-wrap gap-3">
+                    <div className="p-4 rounded-2xl bg-white/[0.025] border border-white/[0.05] flex items-center justify-between flex-wrap gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center text-white/90 shrink-0">
-                          <Bot size={20} />
+                        <div className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/90 shrink-0">
+                          {renderProviderLogo(selectedProvider, "w-5 h-5")}
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1017,9 +1064,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setSelectedProviderId(null)}
-                          className="px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white text-[11px] cursor-pointer transition font-mono"
+                          className="px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white text-[11px] cursor-pointer transition font-mono flex items-center gap-1.5"
                         >
-                          ← KEMBALI
+                          <ArrowLeft size={12} /> Kembali
                         </button>
                         <button
                           onClick={() => {
@@ -1228,8 +1275,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               }`}
                             >
                               <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                <div className="w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center text-white/60 shrink-0">
-                                  <Bot size={13} />
+                                <div className="w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center text-white/70 shrink-0">
+                                  {renderProviderLogo(selectedProvider, "w-3 h-3")}
                                 </div>
                                 <div className="min-w-0">
                                   <div className="text-[12px] font-mono text-white/85 truncate flex items-center gap-2">
