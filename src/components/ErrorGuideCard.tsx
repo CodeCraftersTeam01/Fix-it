@@ -124,8 +124,8 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
             >
               {copied ? (
                 <>
-                  <Check size={12} className="text-emerald-400" />
-                  <span className="text-emerald-400">Tersalin</span>
+                  <Check size={12} className="text-white" />
+                  <span className="text-white">Tersalin</span>
                 </>
               ) : (
                 <>
@@ -135,7 +135,7 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
               )}
             </button>
           </div>
-          <pre className="text-emerald-300/90 font-mono text-[12px] leading-relaxed overflow-x-auto p-1">
+          <pre className="text-white/90 font-mono text-[12px] leading-relaxed overflow-x-auto p-1">
             {explanation.code_hint}
           </pre>
         </div>

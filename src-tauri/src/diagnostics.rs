@@ -95,6 +95,29 @@ impl DiagnosticsParser {
         None
     }
 
+    /// Extract code snippet context around the error line
+    pub fn extract_snippet(path: &Path, error_line: Option<usize>) -> Option<String> {
+        let content = std::fs::read_to_string(path).ok()?;
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.is_empty() {
+            return None;
+        }
+
+        let target_line = error_line.unwrap_or(1);
+        let start_line = if target_line > 5 { target_line - 5 } else { 1 };
+        let end_line = std::cmp::min(target_line + 5, lines.len());
+
+        let mut snippet = String::new();
+        for i in start_line..=end_line {
+            if i > 0 && i <= lines.len() {
+                let marker = if i == target_line { ">" } else { " " };
+                snippet.push_str(&format!("{} {:3} | {}\n", marker, i, lines[i - 1]));
+            }
+        }
+
+        Some(snippet.trim_end().to_string())
+    }
+
     /// Check a single file for basic syntax issues based on its extension
     pub fn inspect_file(path: &Path) -> Option<CodeError> {
         let ext = path.extension()?.to_str()?.to_lowercase();
@@ -108,7 +131,11 @@ impl DiagnosticsParser {
                     let stdout = String::from_utf8_lossy(&out.stdout);
                     let full_output = format!("{}\n{}", stdout, stderr);
                     if !out.status.success() || full_output.contains("Parse error") || full_output.contains("Fatal error") {
-                        return Self::parse_log_or_terminal_output(&full_output);
+                        if let Some(mut err) = Self::parse_log_or_terminal_output(&full_output) {
+                            err.snippet = Self::extract_snippet(path, err.line_number);
+                            err.file_path = path_str;
+                            return Some(err);
+                        }
                     }
                 }
             }
@@ -117,7 +144,11 @@ impl DiagnosticsParser {
                 if let Ok(out) = std::process::Command::new("python3").args(["-m", "py_compile", &path_str]).output() {
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     if !out.status.success() {
-                        return Self::parse_log_or_terminal_output(&stderr);
+                        if let Some(mut err) = Self::parse_log_or_terminal_output(&stderr) {
+                            err.snippet = Self::extract_snippet(path, err.line_number);
+                            err.file_path = path_str;
+                            return Some(err);
+                        }
                     }
                 }
             }
@@ -126,7 +157,11 @@ impl DiagnosticsParser {
                 if let Ok(out) = std::process::Command::new("node").args(["-c", &path_str]).output() {
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     if !out.status.success() {
-                        return Self::parse_log_or_terminal_output(&stderr);
+                        if let Some(mut err) = Self::parse_log_or_terminal_output(&stderr) {
+                            err.snippet = Self::extract_snippet(path, err.line_number);
+                            err.file_path = path_str;
+                            return Some(err);
+                        }
                     }
                 }
             }
@@ -134,11 +169,11 @@ impl DiagnosticsParser {
                 if let Ok(content) = std::fs::read_to_string(path) {
                     if let Err(e) = serde_json::from_str::<serde_json::Value>(&content) {
                         return Some(CodeError {
-                            file_path: path_str,
+                            file_path: path_str.clone(),
                             line_number: Some(e.line()),
                             error_type: "JsonSyntaxError".to_string(),
                             raw_message: e.to_string(),
-                            snippet: None,
+                            snippet: Self::extract_snippet(path, Some(e.line())),
                             project_name: None,
                         });
                     }

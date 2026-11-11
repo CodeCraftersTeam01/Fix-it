@@ -407,20 +407,37 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
                         .body(&notif_body)
                         .show();
 
+                    // Emit analyzing/thinking status immediately to the HUD
+                    let _ = app_inner.emit("fixit-error-analyzing", serde_json::json!({
+                        "file_name": file_name,
+                        "editor": editor,
+                        "line": err.line_number,
+                        "error_type": err.error_type,
+                        "file_path": changed_file.to_string_lossy().to_string(),
+                    }));
+
+                    if let Some(win) = app_inner.get_webview_window("main") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+
                     let state: tauri::State<AppState> = app_inner.state();
                     let conf = state.config.lock().await;
                     let explanation = match AiClient::analyze_error(&err, &conf).await {
                         Ok(exp) => exp,
-                        Err(_) => FixExplanation {
-                            summary: format!("Terdeteksi {} pada baris {:?}", err.error_type, err.line_number.unwrap_or(0)),
-                            why_it_happened: format!("Pesan error: {}", err.raw_message),
-                            steps: vec![
-                                "Periksa sintaks pada baris terkait.".to_string(),
-                                "Pastikan struktur kode dan tanda kurung sudah benar.".to_string(),
-                                "Simpan kembali berkas (Cmd + S).".to_string(),
-                            ],
-                            code_hint: err.snippet.clone(),
-                        },
+                        Err(e) => {
+                            eprintln!("FixIt AI Analysis Error: {}", e);
+                            FixExplanation {
+                                summary: format!("Terdeteksi {} pada baris {:?}", err.error_type, err.line_number.unwrap_or(0)),
+                                why_it_happened: format!("Pesan error interpreter: {}", err.raw_message),
+                                steps: vec![
+                                    "Periksa sintaks pada baris terkait.".to_string(),
+                                    "Pastikan tanda kurung, kutip, atau titik koma sudah sesuai.".to_string(),
+                                    "Simpan kembali berkas (Cmd + S).".to_string(),
+                                ],
+                                code_hint: err.snippet.clone(),
+                            }
+                        }
                     };
 
                     let _ = app_inner.emit("fixit-error-detected", serde_json::json!({
@@ -430,7 +447,6 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
 
                     if let Some(win) = app_inner.get_webview_window("main") {
                         let _ = win.show();
-                        let _ = win.set_focus();
                     }
                 } else {
                     // Valid syntax after typing paused

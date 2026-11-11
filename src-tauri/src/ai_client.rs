@@ -53,27 +53,35 @@ impl AiClient {
             });
         }
 
-        let system_prompt = r#"Anda adalah FixIt, asisten AI ramah dan edukatif untuk mahasiswa yang sedang praktikum pemrograman.
-Tugas Anda adalah menganalisis pesan error kode yang diberikan dan memandu mahasiswa memahami serta memperbaikinya secara bertahap.
+        let system_prompt = r#"Anda adalah FixIt, asisten AI pemrograman edukatif yang to-the-point dan akurat.
+TUGAS ANDA:
+Menganalisis error kode dan memandu developer memperbaikinya secara langsung, presisi, dan sesuai dengan berkas yang sedang diedit.
+
+ATURAN KRUSIAL:
+1. Analisis 'Potongan Kode' yang diberikan dari berkas user secara teliti, terutama baris yang ditandai tanda panah '>'.
+2. Penjelasan (summary, why_it_happened, steps) dan Rekomendasi Kode (code_hint) HARUS 100% SESUAI dengan kode asli user. JANGAN PERNAH mengarang variabel, array, atau fungsi yang tidak ada hubungannya dengan berkas user.
+3. Jika masalahnya adalah sintaks yang belum selesai (misalnya baris echo '' yang belum diberi titik koma ';', atau tanda kurung yang belum ditutup), jelaskan secara spesifik pada baris kode tersebut.
+4. Gunakan bahasa Indonesia yang ramah, edukatif, dan jelas tanpa bertele-tele.
+
 Output HARUS berformat JSON valid dengan struktur:
 {
-  "summary": "Ringkasan kesalahan dalam 1-2 kalimat bahasa Indonesia sederhana",
-  "why_it_happened": "Penjelasan konsep mengapa error ini terjadi secara edukatif",
+  "summary": "Ringkasan kesalahan dalam 1-2 kalimat to-the-point sesuai baris dan kode user",
+  "why_it_happened": "Penjelasan konsep singkat mengapa interpreter menolak sintaks tersebut",
   "steps": [
-    "Langkah 1 konkret perbaikan",
-    "Langkah 2 konkret perbaikan",
-    "Langkah 3 simpan dan tes ulang"
+    "Langkah 1 konkret perbaikan pada baris terkait",
+    "Langkah 2 konkret jika diperlukan",
+    "Simpan file kembali (Cmd + S)"
   ],
-  "code_hint": "Potongan baris kode yang benar (opsional)"
+  "code_hint": "Baris kode yang sudah diperbaiki secara tepat (misal: echo '';)"
 }"#;
 
         let user_content = format!(
-            "Berkas: {}\nBaris: {:?}\nTipe Error: {}\nPesan Error: {}\nPotongan Kode:\n{}",
+            "Berkas: {}\nBaris yang error: {:?}\nTipe Error: {}\nPesan Error Asli: {}\n\nPotongan Kode dari Berkas User:\n```\n{}\n```\n\nAnalisis kode di atas dan berikan JSON perbaikan yang persis sesuai konteks kode tersebut.",
             error.file_path,
             error.line_number,
             error.error_type,
             error.raw_message,
-            error.snippet.as_deref().unwrap_or("(tidak tersedia)")
+            error.snippet.as_deref().unwrap_or("(berkas kosong atau tidak terbaca)")
         );
 
         let endpoint = format!("{}/chat/completions", config.openai_base_url.trim_end_matches('/'));

@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from "react";
+import { Sparkles } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
@@ -8,6 +9,8 @@ import { CodeError, FixExplanation, ChatMessage, FileActivity } from "../types";
 interface FloatingHudProps {
   currentError?: CodeError | null;
   explanation?: FixExplanation | null;
+  isAnalyzing?: boolean;
+  analyzingInfo?: { file_name: string; line?: number; error_type?: string } | null;
   messages: ChatMessage[];
   activeFileActivity?: FileActivity | null;
   onSendMessage: (text: string) => void;
@@ -25,6 +28,8 @@ interface FloatingHudProps {
 export const FloatingHud: React.FC<FloatingHudProps> = ({
   currentError,
   explanation,
+  isAnalyzing = false,
+  analyzingInfo = null,
   messages,
   activeFileActivity,
   onSendMessage,
@@ -95,8 +100,48 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-6 py-2 space-y-4 cursor-default"
       >
-        {/* Active Error Guide */}
-        {currentError && explanation ? (
+        {/* Thinking State when AI is actively analyzing the error */}
+        {isAnalyzing ? (
+          <div className="pt-1">
+            <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+                  <span className="text-[12px] font-medium text-white/90">
+                    FixIt Thinking
+                  </span>
+                  {analyzingInfo?.file_name && (
+                    <span className="font-mono text-white/95 font-semibold text-[11px] bg-white/[0.08] px-1.5 py-0.5 rounded truncate">
+                      {analyzingInfo.file_name}{analyzingInfo.line ? ` : ${analyzingInfo.line}` : ""}
+                    </span>
+                  )}
+                </div>
+
+                <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 shrink-0">
+                  Agent Active
+                </span>
+              </div>
+
+              {/* Shimmer / Text Shine */}
+              <div className="py-1">
+                <div className="text-[13px] font-medium animate-text-shine flex items-center gap-2">
+                  <Sparkles size={14} className="shrink-0 text-white/80 animate-pulse" />
+                  <span>Menganalisis error & merancang solusi perbaikan...</span>
+                </div>
+              </div>
+
+              {/* Sub-info bar */}
+              <div className="text-[10px] font-mono text-white/35 pt-1.5 border-t border-white/[0.04] flex items-center justify-between gap-2">
+                <span className="truncate">
+                  {analyzingInfo?.error_type || "Pemeriksaan Sintaks"}
+                </span>
+                <span className="shrink-0 text-white/30">
+                  Memproses solusi...
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : currentError && explanation ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-[11px] text-white/40 pb-0.5">
               <span className="flex items-center gap-1.5 font-medium text-white/80">

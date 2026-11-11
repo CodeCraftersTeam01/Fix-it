@@ -8,6 +8,12 @@ export function App() {
   const isSettingsRoute = typeof window !== "undefined" && window.location.hash === "#settings";
   const [currentError, setCurrentError] = useState<CodeError | null>(null);
   const [explanation, setExplanation] = useState<FixExplanation | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzingInfo, setAnalyzingInfo] = useState<{
+    file_name: string;
+    line?: number;
+    error_type?: string;
+  } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeFileActivity, setActiveFileActivity] = useState<FileActivity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,9 +46,18 @@ export function App() {
     const setupTauriEvents = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
+        await listen<{ file_name: string; line?: number; error_type?: string }>(
+          "fixit-error-analyzing",
+          (event) => {
+            setIsAnalyzing(true);
+            setAnalyzingInfo(event.payload);
+          }
+        );
         await listen<{ error: CodeError; explanation: FixExplanation }>(
           "fixit-error-detected",
           (event) => {
+            setIsAnalyzing(false);
+            setAnalyzingInfo(null);
             setCurrentError(event.payload.error);
             setExplanation(event.payload.explanation);
           }
@@ -52,6 +67,8 @@ export function App() {
         });
         await listen<FileActivity>("fixit-file-valid", (event) => {
           setActiveFileActivity(event.payload);
+          setIsAnalyzing(false);
+          setAnalyzingInfo(null);
           // Auto-clear active error if student fixed the broken file
           setCurrentError((prev) => {
             if (prev && prev.file_path === event.payload.file_path) {
@@ -229,6 +246,8 @@ export function App() {
     <FloatingHud
       currentError={currentError}
       explanation={explanation}
+      isAnalyzing={isAnalyzing}
+      analyzingInfo={analyzingInfo}
       messages={messages}
       activeFileActivity={activeFileActivity}
       onSendMessage={handleSendMessage}
