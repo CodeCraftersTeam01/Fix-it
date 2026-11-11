@@ -1,5 +1,4 @@
 import React, { useRef, useEffect } from "react";
-import { Sparkles } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
@@ -40,7 +39,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   onSimulateError: _onSimulateError,
   onClearError,
   isLoading = false,
-  settings,
+  settings: _settings,
   onSaveSettings: _onSaveSettings,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,42 +102,18 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         {/* Thinking State when AI is actively analyzing the error */}
         {isAnalyzing ? (
           <div className="pt-1">
-            <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
-                  <span className="text-[12px] font-medium text-white/90">
-                    FixIt Thinking
-                  </span>
-                  {analyzingInfo?.file_name && (
-                    <span className="font-mono text-white/95 font-semibold text-[11px] bg-white/[0.08] px-1.5 py-0.5 rounded truncate">
-                      {analyzingInfo.file_name}{analyzingInfo.line ? ` : ${analyzingInfo.line}` : ""}
-                    </span>
-                  )}
+            <div className="p-3.5 rounded-2xl bg-white/[0.035] border border-white/[0.05]">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+                <h3 className="text-[15px] font-medium text-white/95 tracking-tight animate-text-shine">
+                  Menganalisis Error...
+                </h3>
+              </div>
+              {analyzingInfo?.file_name && (
+                <div className="text-[12.5px] text-white/45 pl-4 pt-0.5 truncate font-sans">
+                  {analyzingInfo.file_name}{analyzingInfo.line ? ` • baris ${analyzingInfo.line}` : ""}
                 </div>
-
-                <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 shrink-0">
-                  Agent Active
-                </span>
-              </div>
-
-              {/* Shimmer / Text Shine */}
-              <div className="py-1">
-                <div className="text-[13px] font-medium animate-text-shine flex items-center gap-2">
-                  <Sparkles size={14} className="shrink-0 text-white/80 animate-pulse" />
-                  <span>Menganalisis error & merancang solusi perbaikan...</span>
-                </div>
-              </div>
-
-              {/* Sub-info bar */}
-              <div className="text-[10px] font-mono text-white/35 pt-1.5 border-t border-white/[0.04] flex items-center justify-between gap-2">
-                <span className="truncate">
-                  {analyzingInfo?.error_type || "Pemeriksaan Sintaks"}
-                </span>
-                <span className="shrink-0 text-white/30">
-                  Memproses solusi...
-                </span>
-              </div>
+              )}
             </div>
           </div>
         ) : currentError && explanation ? (
@@ -159,44 +134,33 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             <ErrorGuideCard error={currentError} explanation={explanation} />
           </div>
         ) : (
-          /* Live IDE & File Activity Card (Minimized, sleek & compact Apple Obsidian) */
+          /* Live IDE & File Activity Card (Clean, Cozy H3 with filename below, Zero Slop) */
           <div className="pt-1">
-            <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      activeFileActivity?.status.includes("Menulis")
-                        ? "bg-white animate-ping"
-                        : "bg-white/70 animate-pulse"
-                    }`}
-                  />
-                  <span className="text-[12px] font-medium text-white/90 truncate">
-                    {activeFileActivity ? activeFileActivity.status : "Standby Memantau"}
-                  </span>
-                  {activeFileActivity && (
-                    <span className="font-mono text-white/95 font-semibold text-[11px] bg-white/[0.08] px-1.5 py-0.5 rounded truncate">
-                      {activeFileActivity.file_name}
-                    </span>
-                  )}
-                </div>
-
-                <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 shrink-0">
-                  {activeFileActivity?.editor || "IDE Active"}
-                </span>
-              </div>
-
-              {/* Sub-info bar */}
-              <div className="text-[10px] font-mono text-white/35 pt-1.5 border-t border-white/[0.04] flex items-center justify-between gap-2">
-                <span className="truncate" title={activeFileActivity?.file_path || "Menunggu penulisan berkas"}>
+            <div className="p-3.5 rounded-2xl bg-white/[0.035] border border-white/[0.05]">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    activeFileActivity?.status.includes("Menulis")
+                      ? "bg-white animate-ping"
+                      : "bg-white/70"
+                  }`}
+                />
+                <h3 className="text-[15.5px] font-medium text-white/95 tracking-tight">
                   {activeFileActivity
-                    ? `${activeFileActivity.project} • ${activeFileActivity.file_path}`
-                    : "Fokus ngoding, error akan terdeteksi di sini"}
-                </span>
-                <span className="shrink-0 text-white/30">
-                  📁 {settings?.watched_paths?.length || 1} Workspace
-                </span>
+                    ? (activeFileActivity.status.includes("Valid") ? "Sintaks Valid" : activeFileActivity.status)
+                    : "Standby Memantau"}
+                </h3>
               </div>
+
+              {activeFileActivity?.file_name ? (
+                <div className="text-[12.5px] text-white/45 pl-4 pt-0.5 truncate font-sans">
+                  {activeFileActivity.file_name}
+                </div>
+              ) : (
+                <div className="text-[12.5px] text-white/40 pl-4 pt-0.5 font-sans">
+                  Menunggu aktivitas koding...
+                </div>
+              )}
             </div>
           </div>
         )}
