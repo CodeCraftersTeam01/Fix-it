@@ -62,6 +62,7 @@ ATURAN KRUSIAL:
 2. Penjelasan (summary, why_it_happened, steps) dan Rekomendasi Kode (code_hint) HARUS 100% SESUAI dengan kode asli user. JANGAN PERNAH mengarang variabel, array, atau fungsi yang tidak ada hubungannya dengan berkas user.
 3. Jika masalahnya adalah sintaks yang belum selesai (misalnya baris echo '' yang belum diberi titik koma ';', atau tanda kurung yang belum ditutup), jelaskan secara spesifik pada baris kode tersebut.
 4. Gunakan bahasa Indonesia yang ramah, edukatif, dan jelas tanpa bertele-tele.
+5. Gunakan path berkas relatif yang ringkas (misal: 'app/Models/User.php') saat menyebutkan nama berkas di langkah perbaikan, jangan pernah mencantumkan path absolut panjang seperti '/Users/...'.
 
 Output HARUS berformat JSON valid dengan struktur:
 {

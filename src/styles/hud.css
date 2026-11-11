@@ -116,4 +116,7 @@
   display: inline-block;
   will-change: opacity, filter, transform;
   animation: word-blur-reveal 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }

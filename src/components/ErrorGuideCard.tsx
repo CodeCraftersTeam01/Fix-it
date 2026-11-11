@@ -33,7 +33,7 @@ export const WordBlurReveal: React.FC<WordBlurRevealProps> = ({
         return (
           <span
             key={idx}
-            className="animate-word-blur"
+            className="animate-word-blur break-words [overflow-wrap:anywhere]"
             style={{
               animationDelay: `${delay}ms`,
             }}
@@ -74,6 +74,25 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
 
   const fileName = error.file_path.split("/").pop() || error.file_path;
 
+  // Shorten long absolute paths to clean relative paths in steps
+  const formatStepText = (text: string) => {
+    if (!text) return "";
+    let formatted = text;
+    if (error.file_path && error.file_path.includes("/")) {
+      const parts = error.file_path.split("/");
+      const appIdx = parts.findIndex((p) =>
+        ["app", "src", "routes", "controllers", "models", "resources"].includes(p.toLowerCase())
+      );
+      if (appIdx !== -1) {
+        const relPath = parts.slice(appIdx).join("/");
+        formatted = formatted.split(error.file_path).join(relPath);
+      } else {
+        formatted = formatted.split(error.file_path).join(fileName);
+      }
+    }
+    return formatted.replace(/\/Users\/[^\s/]+(?:\/[^\s/]+)*?\/(app\/|src\/|routes\/|models\/|controllers\/)/gi, "$1");
+  };
+
   return (
     <div className="space-y-3.5 text-white/90">
       {/* File & Line Badge */}
@@ -96,7 +115,7 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
         <div className="text-[11px] font-mono font-medium text-white/45 uppercase tracking-wider mb-1">
           {error.error_type || "Sintaks Error"}
         </div>
-        <div className="text-[13.5px] font-medium text-white/95 leading-relaxed">
+        <div className="text-[13.5px] font-medium text-white/95 leading-relaxed break-words [overflow-wrap:anywhere]">
           <WordBlurReveal
             key={`summary-${explanation.summary || error.raw_message}`}
             text={explanation.summary || error.raw_message}
@@ -111,7 +130,7 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
         <div className="text-[11px] font-mono font-medium uppercase tracking-wider text-white/45">
           Kenapa ini terjadi?
         </div>
-        <p className="text-[13px] text-white/70 leading-relaxed font-normal">
+        <p className="text-[13px] text-white/70 leading-relaxed font-normal break-words [overflow-wrap:anywhere]">
           <WordBlurReveal
             key={`why-${explanation.why_it_happened}`}
             text={explanation.why_it_happened}
@@ -130,12 +149,13 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
           <div className="space-y-1.5">
             {explanation.steps.map((step, idx) => {
               const isChecked = !!completedSteps[idx];
+              const cleanedStep = formatStepText(step);
               return (
                 <button
                   key={idx}
                   type="button"
                   onClick={() => toggleStep(idx)}
-                  className={`w-full text-left flex items-start gap-2.5 p-2.5 rounded-xl transition text-[12.5px] ${
+                  className={`w-full text-left flex items-start gap-2.5 p-2.5 rounded-xl transition text-[12.5px] min-w-0 overflow-hidden ${
                     isChecked
                       ? "text-white/30 line-through bg-transparent"
                       : "text-white/85 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04]"
@@ -150,10 +170,10 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
                   >
                     {isChecked && <Check size={11} strokeWidth={3} />}
                   </div>
-                  <span className="leading-snug">
+                  <span className="leading-snug min-w-0 break-words [overflow-wrap:anywhere] flex-1">
                     <WordBlurReveal
-                      key={`step-${idx}-${step}`}
-                      text={step}
+                      key={`step-${idx}-${cleanedStep}`}
+                      text={cleanedStep}
                       baseDelayMs={300 + idx * 80}
                       wordDelayMs={18}
                     />
@@ -191,7 +211,7 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
               )}
             </button>
           </div>
-          <pre className="text-white/90 font-mono text-[12px] leading-relaxed overflow-x-auto p-1">
+          <pre className="text-white/90 font-mono text-[12px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-all p-1">
             {explanation.code_hint}
           </pre>
         </div>
