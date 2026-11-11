@@ -1,6 +1,7 @@
 pub mod ai_client;
 pub mod config;
 pub mod diagnostics;
+pub mod flood_guard;
 pub mod runtime_endpoint;
 pub mod runtime_log_watcher;
 pub mod runtime_parser;
