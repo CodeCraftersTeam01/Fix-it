@@ -157,6 +157,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeTab, setActiveTab] = useState<"models" | "folders" | "general" | "about">("models");
   const [providers, setProviders] = useState<AIProvider[]>(INITIAL_PROVIDERS);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [activeProviderId, setActiveProviderId] = useState<string>("ciora");
   const [activeModel, setActiveModel] = useState<string>("glm-5.3-flash-free");
   const [newKeyInput, setNewKeyInput] = useState<string>("");
   const [newModelIdInput, setNewModelIdInput] = useState<string>("");
@@ -191,6 +192,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   useEffect(() => {
     if (config) {
+      if (config.active_provider) {
+        setActiveProviderId(config.active_provider);
+      }
       if (config.model_name) {
         setActiveModel(config.model_name);
       }
@@ -222,6 +226,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [config]);
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId) || null;
+  const activeProvider = providers.find((p) => p.id === activeProviderId) || providers[0] || null;
 
   const handleClose = async () => {
     if (onClose) {
@@ -236,11 +241,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleSaveAll = (updatedProviders?: AIProvider[], updatedModel?: string) => {
+  const handleSaveAll = (
+    updatedProviders?: AIProvider[],
+    updatedModel?: string,
+    updatedActiveProviderId?: string
+  ) => {
     const list = updatedProviders || providers;
     const modelToSave = updatedModel || activeModel;
+    const providerIdToSave = updatedActiveProviderId || activeProviderId;
 
-    const currentP = list.find((p) => p.id === selectedProviderId) || list[0];
+    const currentP =
+      list.find((p) => p.id === providerIdToSave) ||
+      list.find((p) => p.id === selectedProviderId) ||
+      list[0];
+
     const customList: CustomProvider[] = list
       .filter((p) => p.category === "custom")
       .map((cp) => ({
@@ -259,13 +273,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       model_name: modelToSave,
       idle_delay_ms: idleDelayMs,
       watched_paths: watchedPaths,
-      active_provider: currentP?.id || "ciora",
+      active_provider: currentP?.id || providerIdToSave || "ciora",
       custom_providers: customList,
     };
 
     onSave?.(newCfg);
     setSaveBanner(true);
     setTimeout(() => setSaveBanner(false), 1200);
+  };
+
+  // Switch Global Active Model & Provider directly from Overview
+  const handleSelectGlobalModel = (providerId: string, modelId: string) => {
+    const targetProvider = providers.find((p) => p.id === providerId);
+    if (!targetProvider) return;
+
+    setActiveProviderId(providerId);
+    setActiveModel(modelId);
+
+    const updated = providers.map((p) => {
+      if (p.id === providerId) {
+        return { ...p, active_model: modelId };
+      }
+      return p;
+    });
+
+    setProviders(updated);
+    handleSaveAll(updated, modelId, providerId);
   };
 
   // Add API Key to current provider (custom or default)
@@ -343,6 +376,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleApplyModel = (modelId: string) => {
     setActiveModel(modelId);
     if (selectedProvider) {
+      setActiveProviderId(selectedProvider.id);
       const updated = providers.map((p) => {
         if (p.id === selectedProvider.id) {
           return { ...p, active_model: modelId };
@@ -350,7 +384,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         return p;
       });
       setProviders(updated);
-      handleSaveAll(updated, modelId);
+      handleSaveAll(updated, modelId, selectedProvider.id);
     }
   };
 
@@ -636,7 +670,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <>
               {/* Overview Mode: Lists Custom Providers & Default Providers */}
               {!selectedProviderId ? (
-                <div className="space-y-7">
+                <div className="space-y-6">
+                  {/* SELEKSI MODEL AKTIF UTAMA FIXIT */}
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] shadow-xl space-y-3.5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                          <Sparkles size={16} />
+                        </div>
+                        <div>
+                          <div className="text-[12px] font-semibold text-white/95 uppercase tracking-wider font-mono flex items-center gap-2">
+                            <span>MODEL AKTIF UTAMA FIXIT</span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-sans normal-case">
+                              Active Engine
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-white/40">
+                            Pilih model & provider yang digunakan oleh FixIt untuk memantau kode dan menganalisis error di background.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Active Status Badge */}
+                      {activeProvider && (
+                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                          {(activeProvider.connectionsCount ?? activeProvider.api_keys.length) > 0 ? (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              <span>Siap Digunakan ({activeProvider.name})</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                              <span>Offline (Butuh API Key di {activeProvider.name})</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selector Control */}
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap pt-1">
+                      <div className="flex-1 min-w-[220px]">
+                        <select
+                          value={`${activeProviderId}:::${activeModel}`}
+                          onChange={(e) => {
+                            const [pId, mId] = e.target.value.split(":::");
+                            if (pId && mId) {
+                              handleSelectGlobalModel(pId, mId);
+                            }
+                          }}
+                          className="w-full bg-[#12151b] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white/90 focus:outline-none focus:border-white/25 font-mono cursor-pointer shadow-inner"
+                        >
+                          {providers.map((p) => {
+                            const isOffline = (p.connectionsCount ?? p.api_keys.length) === 0;
+                            return (
+                              <optgroup
+                                key={p.id}
+                                label={`${p.name} (${p.category === "custom" ? "Custom" : "Default"}${
+                                  isOffline ? " - 0 Key / Offline" : ` - ${p.connectionsCount || p.api_keys.length} Key`
+                                })`}
+                              >
+                                {p.available_models.map((m) => (
+                                  <option key={`${p.id}:::${m.id}`} value={`${p.id}:::${m.id}`}>
+                                    {p.name} — {m.id} {isOffline ? "⚠️ (Offline)" : "✓"}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <button
+                        onClick={() => setSelectedProviderId(activeProviderId)}
+                        className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs text-white/85 flex items-center gap-1.5 transition cursor-pointer font-mono shrink-0"
+                      >
+                        <Sliders size={13} />
+                        <span>Detail Provider</span>
+                      </button>
+                    </div>
+
+                    {/* Active Engine Summary Pill */}
+                    <div className="pt-2 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono text-white/45 flex-wrap gap-2">
+                      <div className="flex items-center gap-2 truncate">
+                        <span>Engine: <span className="text-white/85 font-medium">{activeProvider?.name}</span></span>
+                        <span>•</span>
+                        <span>Model: <span className="text-emerald-400 font-semibold">{activeModel}</span></span>
+                      </div>
+                      <div className="text-[10px] text-white/35 truncate max-w-xs font-mono">
+                        {activeProvider?.base_url}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Section 1: Custom Providers */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -657,50 +784,98 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {customProvidersList.map((cp) => (
-                        <div
-                          key={cp.id}
-                          onClick={() => setSelectedProviderId(cp.id)}
-                          className="p-4 rounded-2xl bg-white/[0.025] hover:bg-white/[0.05] transition cursor-pointer flex items-center justify-between group shadow-sm"
-                        >
-                          <div className="flex items-center gap-3 min-w-0 pr-2">
-                            <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-white/80 shrink-0">
-                              <Bot size={18} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-[13px] font-medium text-white/90 group-hover:text-white truncate">
-                                {cp.name}
+                      {customProvidersList.map((cp) => {
+                        const hasConnection = (cp.connectionsCount ?? cp.api_keys.length) > 0;
+                        const isGlobalActive = activeProviderId === cp.id;
+
+                        return (
+                          <div
+                            key={cp.id}
+                            onClick={() => setSelectedProviderId(cp.id)}
+                            className={`p-4 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-3 group relative border shadow-sm ${
+                              isGlobalActive
+                                ? "bg-white/[0.045] border-emerald-500/30"
+                                : "bg-white/[0.02] hover:bg-white/[0.045] border-white/[0.03]"
+                            }`}
+                          >
+                            {/* Baris Atas: Info Provider & Tombol Aksi */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                                <div
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                    isGlobalActive
+                                      ? "bg-emerald-500/15 text-emerald-300"
+                                      : "bg-white/[0.06] text-white/80"
+                                  }`}
+                                >
+                                  <Bot size={18} />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[13px] font-semibold text-white/90 group-hover:text-white truncate">
+                                      {cp.name}
+                                    </span>
+                                    {isGlobalActive && (
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono font-medium">
+                                        AKTIF
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-white/40 font-mono uppercase tracking-wider mt-0.5 truncate">
+                                    {cp.protocol} COMPATIBLE
+                                  </div>
+                                </div>
                               </div>
-                              <div className="text-[11px] text-white/40 flex items-center gap-1.5 mt-0.5 font-mono">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                                <span>{cp.connectionsCount || cp.api_keys.length} Connected</span>
-                                <span className="px-1.5 py-0.2 rounded bg-white/[0.05] text-[9px] uppercase text-white/50">
-                                  {cp.protocol} COMPATIBLE
-                                </span>
+
+                              <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleDeleteProvider(cp.id)}
+                                  className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-red-500/15 text-white/30 hover:text-red-400 flex items-center justify-center transition cursor-pointer"
+                                  title={`Hapus ${cp.name}`}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => setSelectedProviderId(cp.id)}
+                                  className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.1] text-white/70 group-hover:text-white font-mono transition cursor-pointer"
+                                >
+                                  Konfigurasi →
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Baris Bawah: Status Koneksi & Model Info */}
+                            <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono gap-2">
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {hasConnection ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                    <span className="text-white/60">
+                                      {cp.connectionsCount || cp.api_keys.length} Connected
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0"></span>
+                                    <span className="text-white/30">0 Connected (Offline)</span>
+                                  </>
+                                )}
+                              </div>
+
+                              <div
+                                className="text-[10px] text-white/40 truncate max-w-[130px] text-right font-mono"
+                                title={cp.active_model || "Tanpa model"}
+                              >
+                                {cp.active_model || "Tanpa model"}
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => handleDeleteProvider(cp.id)}
-                              className="p-1.5 rounded-lg bg-white/[0.03] hover:bg-red-500/20 text-white/35 hover:text-red-400 transition cursor-pointer"
-                              title={`Hapus ${cp.name}`}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                            <button
-                              onClick={() => setSelectedProviderId(cp.id)}
-                              className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] group-hover:bg-white/[0.1] text-white/60 group-hover:text-white font-mono transition cursor-pointer"
-                            >
-                              Konfigurasi →
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Section 2: Default Providers (Now fully visitable!) */}
+                  {/* Section 2: Default Providers */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <div className="text-[11px] font-mono tracking-wider text-white/40 uppercase">
@@ -715,40 +890,89 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {defaultProvidersList.map((dp) => (
-                        <div
-                          key={dp.id}
-                          onClick={() => setSelectedProviderId(dp.id)}
-                          className="p-3.5 rounded-2xl bg-white/[0.02] hover:bg-white/[0.045] transition cursor-pointer flex items-center justify-between group shadow-sm"
-                        >
-                          <div className="flex items-center gap-3 min-w-0 pr-2">
-                            <div className="w-8 h-8 rounded-xl bg-white/[0.05] flex items-center justify-center text-white/70 shrink-0">
-                              {dp.id === "gemini" ? (
-                                <Sparkles size={15} />
-                              ) : dp.id === "groq" ? (
-                                <Zap size={15} />
-                              ) : (
-                                <Radio size={15} />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-[12px] font-medium text-white/80 group-hover:text-white truncate">
-                                {dp.name}
+                      {defaultProvidersList.map((dp) => {
+                        const hasConnection = (dp.connectionsCount ?? dp.api_keys.length) > 0;
+                        const isGlobalActive = activeProviderId === dp.id;
+
+                        return (
+                          <div
+                            key={dp.id}
+                            onClick={() => setSelectedProviderId(dp.id)}
+                            className={`p-3.5 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-2.5 group relative border shadow-sm ${
+                              isGlobalActive
+                                ? "bg-white/[0.045] border-emerald-500/30"
+                                : "bg-white/[0.02] hover:bg-white/[0.04] border-white/[0.03]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                                <div
+                                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                    isGlobalActive
+                                      ? "bg-emerald-500/15 text-emerald-300"
+                                      : "bg-white/[0.05] text-white/70"
+                                  }`}
+                                >
+                                  {dp.id === "gemini" ? (
+                                    <Sparkles size={15} />
+                                  ) : dp.id === "groq" ? (
+                                    <Zap size={15} />
+                                  ) : (
+                                    <Radio size={15} />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[12px] font-semibold text-white/85 group-hover:text-white truncate">
+                                      {dp.name}
+                                    </span>
+                                    {isGlobalActive && (
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono font-medium">
+                                        AKTIF
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-white/35 font-mono mt-0.5 truncate">
+                                    {dp.badge || dp.protocol.toUpperCase()}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-white/35 font-mono">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                                <span>{dp.connectionsCount} Connected</span>
-                                <span className="px-1.5 py-0.2 rounded bg-white/[0.04] text-[9px] text-white/50">
-                                  {dp.badge}
-                                </span>
+
+                              <button
+                                onClick={() => setSelectedProviderId(dp.id)}
+                                className="text-[10px] px-2 py-1 rounded-lg bg-white/[0.04] group-hover:bg-white/[0.09] text-white/50 group-hover:text-white font-mono shrink-0 transition cursor-pointer"
+                              >
+                                Detail →
+                              </button>
+                            </div>
+
+                            <div className="pt-2 border-t border-white/[0.03] flex items-center justify-between text-[10px] font-mono gap-2">
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {hasConnection ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                    <span className="text-white/55">
+                                      {dp.connectionsCount || dp.api_keys.length} Connected
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0"></span>
+                                    <span className="text-white/30">0 Connected (Offline)</span>
+                                  </>
+                                )}
+                              </div>
+
+                              <div
+                                className="text-white/35 truncate max-w-[130px] text-right font-mono"
+                                title={dp.active_model}
+                              >
+                                {dp.active_model}
                               </div>
                             </div>
                           </div>
-                          <button className="text-[10px] px-2 py-0.8 rounded-md bg-white/[0.04] group-hover:bg-white/[0.08] text-white/50 group-hover:text-white font-mono shrink-0 transition">
-                            Detail →
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -774,8 +998,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] text-white/40 mt-0.5 font-mono">
-                            {selectedProvider.connectionsCount || selectedProvider.api_keys.length} connections aktif
+                          <div className="text-[11px] text-white/40 mt-0.5 font-mono flex items-center gap-1.5">
+                            {selectedProvider.api_keys.length > 0 ? (
+                              <>
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                <span>{selectedProvider.api_keys.length} connections aktif (Online)</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0"></span>
+                                <span className="text-white/30">0 connections aktif (Offline - Butuh API Key)</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

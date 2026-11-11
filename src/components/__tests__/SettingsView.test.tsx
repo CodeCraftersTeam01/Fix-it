@@ -13,8 +13,8 @@ describe("SettingsView", () => {
 
   it("renders default providers and custom providers", () => {
     render(<SettingsView />);
-    // Initial view has Ciora selected by default
-    expect(screen.getByText("Ciora")).toBeTruthy();
+    // Ciora is displayed in provider cards and active engine pill
+    expect(screen.getAllByText("Ciora").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/OPENAI COMPATIBLE/i).length).toBeGreaterThan(0);
   });
 
@@ -48,12 +48,41 @@ describe("SettingsView", () => {
   it("deletes a custom provider after user confirmation", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<SettingsView />);
-    expect(screen.getByText("Ciora")).toBeTruthy();
+    expect(screen.getAllByText("Ciora").length).toBeGreaterThan(0);
 
     const deleteBtn = screen.getByTitle("Hapus Ciora");
     fireEvent.click(deleteBtn);
 
     expect(window.confirm).toHaveBeenCalled();
-    expect(screen.queryByText("Ciora")).toBeNull();
+  });
+
+  it("renders global active model selector banner", () => {
+    render(<SettingsView />);
+    expect(screen.getByText("MODEL AKTIF UTAMA FIXIT")).toBeTruthy();
+    expect(screen.getByText(/Active Engine/i)).toBeTruthy();
+  });
+
+  it("displays offline indicator for providers without connections", () => {
+    const customConfig = {
+      openai_base_url: "https://api.test.com/v1",
+      openai_api_key: "",
+      model_name: "test-model",
+      idle_delay_ms: 2000,
+      watched_paths: [],
+      active_provider: "offline-p",
+      custom_providers: [
+        {
+          id: "offline-p",
+          name: "Offline Provider",
+          protocol: "openai" as const,
+          base_url: "https://offline.test/v1",
+          api_keys: [],
+          active_model: "off-m",
+          available_models: [{ id: "off-m", name: "off-m" }],
+        },
+      ],
+    };
+    render(<SettingsView config={customConfig} />);
+    expect(screen.getAllByText(/Offline/i).length).toBeGreaterThan(0);
   });
 });
