@@ -1,10 +1,11 @@
 import React from "react";
-import { X, Maximize2, Settings } from "lucide-react";
+import { X, Maximize2, Minimize2, Settings } from "lucide-react";
 
 interface HeaderBarProps {
   onClose?: () => void;
   onOpenSettings?: () => void;
   onExpand?: () => void;
+  isExpanded?: boolean;
   onStartDrag?: (e: React.MouseEvent) => void;
   greeting?: string;
 }
@@ -13,6 +14,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onClose,
   onOpenSettings,
   onExpand,
+  isExpanded = false,
   onStartDrag,
   greeting,
 }) => {
@@ -66,11 +68,15 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             e.stopPropagation();
             onExpand?.();
           }}
-          aria-label="Expand"
-          title="Perbesar"
+          aria-label={isExpanded ? "Minimize" : "Expand"}
+          title={isExpanded ? "Perkecil (Ukuran Normal)" : "Perbesar (Mode Lebar)"}
           className="w-9 h-9 rounded-full apple-pill-btn flex items-center justify-center text-white/85 hover:text-white transition cursor-pointer"
         >
-          <Maximize2 size={14} strokeWidth={2.2} />
+          {isExpanded ? (
+            <Minimize2 size={14} strokeWidth={2.2} />
+          ) : (
+            <Maximize2 size={14} strokeWidth={2.2} />
+          )}
         </button>
       </div>
     </div>

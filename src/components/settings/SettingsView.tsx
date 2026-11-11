@@ -532,9 +532,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const defaultProvidersList = providers.filter((p) => p.category === "default");
 
   return (
-    <div className="w-full h-full flex bg-[#0c0e12] text-white/85 select-none overflow-hidden rounded-[26px] shadow-2xl relative font-sans">
+    <div className="w-full h-full flex apple-hud-glass text-white/90 select-none overflow-hidden rounded-[28px] relative font-sans">
       {/* Sisi Kiri: Clean Minimal Navbar */}
-      <aside className="w-56 bg-[#090b0e] border-r border-white/[0.04] flex flex-col justify-between p-4 shrink-0">
+      <aside className="w-56 bg-black/40 border-r border-white/[0.05] flex flex-col justify-between p-4 shrink-0 backdrop-blur-md">
         <div className="space-y-6">
           {/* Logo & Brand Header with User's Official Logo */}
           <div className="flex items-center gap-3 px-1 pt-1">
@@ -625,11 +625,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </aside>
 
       {/* Sisi Kanan: Main Content Area */}
-      <main className="flex-1 flex flex-col h-full bg-[#0c0e12] overflow-hidden min-w-0">
+      <main className="flex-1 flex flex-col h-full bg-black/20 overflow-hidden min-w-0">
         {/* Top Drag Header Bar */}
         <header
           data-tauri-drag-region
-          className="h-12 border-b border-white/[0.04] flex items-center justify-between px-6 shrink-0 cursor-grab active:cursor-grabbing bg-white/[0.005]"
+          className="h-12 border-b border-white/[0.05] flex items-center justify-between px-6 shrink-0 cursor-grab active:cursor-grabbing bg-white/[0.01]"
         >
           <div data-tauri-drag-region className="flex items-center gap-2 text-xs text-white/40 font-mono truncate mr-2">
             <span>FixIt</span>

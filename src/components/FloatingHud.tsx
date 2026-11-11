@@ -13,8 +13,9 @@ interface FloatingHudProps {
   onSendMessage: (text: string) => void;
   onClose: () => void;
   onExpand?: () => void;
+  isExpanded?: boolean;
   onOpenSettings?: () => void;
-  onSimulateError: () => void;
+  onSimulateError?: () => void;
   onClearError: () => void;
   isLoading?: boolean;
   settings?: AppSettings;
@@ -29,8 +30,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   onSendMessage,
   onClose,
   onExpand,
+  isExpanded = false,
   onOpenSettings,
-  onSimulateError,
+  onSimulateError: _onSimulateError,
   onClearError,
   isLoading = false,
   settings,
@@ -76,6 +78,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       <HeaderBar
         onClose={onClose}
         onExpand={onExpand}
+        isExpanded={isExpanded}
         onOpenSettings={onOpenSettings}
         onStartDrag={handleStartDrag}
       />
@@ -111,63 +114,44 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             <ErrorGuideCard error={currentError} explanation={explanation} />
           </div>
         ) : (
-          /* Live IDE & File Activity Card (Clean Apple Obsidian) */
-          <div className="space-y-4 pt-1">
-            <div className="p-4 rounded-2xl bg-white/[0.035] space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+          /* Live IDE & File Activity Card (Minimized, sleek & compact Apple Obsidian) */
+          <div className="pt-1">
+            <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <span
-                    className={`w-2 h-2 rounded-full ${
+                    className={`w-2 h-2 rounded-full shrink-0 ${
                       activeFileActivity?.status.includes("Menulis")
                         ? "bg-amber-400 animate-ping"
                         : "bg-emerald-400 animate-pulse"
                     }`}
                   />
-                  <span className="text-[12px] font-medium text-white/90 tracking-wide">
-                    {activeFileActivity ? activeFileActivity.status : "Standby Memantau IDE"}
+                  <span className="text-[12px] font-medium text-white/90 truncate">
+                    {activeFileActivity ? activeFileActivity.status : "Standby Memantau"}
                   </span>
+                  {activeFileActivity && (
+                    <span className="font-mono text-white/95 font-semibold text-[11px] bg-white/[0.08] px-1.5 py-0.5 rounded truncate">
+                      {activeFileActivity.file_name}
+                    </span>
+                  )}
                 </div>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/60">
-                  {activeFileActivity?.editor || "Antigravity / VS Code / Cursor"}
+
+                <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 shrink-0">
+                  {activeFileActivity?.editor || "IDE Active"}
                 </span>
               </div>
 
-              {activeFileActivity ? (
-                <div className="space-y-1 pt-0.5">
-                  <div className="text-[13.5px] font-mono font-medium text-white/95 flex items-center gap-1.5 truncate">
-                    <span>📄</span>
-                    <span className="truncate">{activeFileActivity.file_name}</span>
-                  </div>
-                  <div className="text-[11px] font-mono text-white/40 truncate">
-                    {activeFileActivity.project} • {activeFileActivity.file_path}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-[12.5px] text-white/65 leading-relaxed font-normal">
-                  Fokus ngoding di <strong className="text-white/85 font-medium">Antigravity IDE, VS Code, Cursor, atau Kiro</strong>. Berkas yang sedang kamu ketik akan otomatis terdeteksi di sini.
-                </p>
-              )}
-
-              {settings?.watched_paths && settings.watched_paths.length > 0 && (
-                <div className="text-[10.5px] font-mono text-white/35 truncate pt-2 border-t border-white/[0.04] flex items-center justify-between">
-                  <span className="truncate">📁 {settings.watched_paths.length} workspace aktif dipantau</span>
-                  <span className="text-white/25 shrink-0 ml-1">Auto-Sync</span>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2 pt-1">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-white/30 px-1">
-                Uji Coba Asisten
+              {/* Sub-info bar */}
+              <div className="text-[10px] font-mono text-white/35 pt-1.5 border-t border-white/[0.04] flex items-center justify-between gap-2">
+                <span className="truncate" title={activeFileActivity?.file_path || "Menunggu penulisan berkas"}>
+                  {activeFileActivity
+                    ? `${activeFileActivity.project} • ${activeFileActivity.file_path}`
+                    : "Fokus ngoding, error akan terdeteksi di sini"}
+                </span>
+                <span className="shrink-0 text-white/30">
+                  📁 {settings?.watched_paths?.length || 1} Workspace
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={onSimulateError}
-                className="w-full text-left flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] transition text-[12.5px] text-white/80 group cursor-pointer"
-              >
-                <span>Simulasikan deteksi error PHP</span>
-                <span className="text-white/30 group-hover:text-white/70 transition">→</span>
-              </button>
             </div>
           </div>
         )}

@@ -11,6 +11,7 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeFileActivity, setActiveFileActivity] = useState<FileActivity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings>({
     openai_base_url: "https://api.openai.com/v1",
@@ -99,8 +100,23 @@ export function App() {
   };
 
   const handleExpand = async () => {
-    // Top-right button ("logo minize") also opens Settings as requested
-    handleOpenSettings();
+    try {
+      const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
+      const appWindow = getCurrentWindow();
+      const size = await appWindow.innerSize();
+      const scaleFactor = await appWindow.scaleFactor();
+      const logicalWidth = size.width / scaleFactor;
+
+      if (logicalWidth > 450) {
+        await appWindow.setSize(new LogicalSize(380, 640));
+        setIsExpanded(false);
+      } else {
+        await appWindow.setSize(new LogicalSize(540, 740));
+        setIsExpanded(true);
+      }
+    } catch {
+      setIsExpanded((prev) => !prev);
+    }
   };
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
@@ -218,6 +234,7 @@ export function App() {
       onSendMessage={handleSendMessage}
       onClose={handleClose}
       onExpand={handleExpand}
+      isExpanded={isExpanded}
       onOpenSettings={handleOpenSettings}
       onSimulateError={handleSimulateError}
       onClearError={handleClearError}
