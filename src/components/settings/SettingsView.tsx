@@ -80,6 +80,11 @@ const renderProviderLogo = (provider: AIProvider, className: string = "w-4 h-4")
   return <OpenAILogo className={className} />;
 };
 
+export const getProviderConnectionCount = (p: AIProvider): number => {
+  if (!p.api_keys) return 0;
+  return p.api_keys.filter((k) => k && k.trim().length > 0).length;
+};
+
 const INITIAL_PROVIDERS: AIProvider[] = [
   // 1. Custom Provider
   {
@@ -91,7 +96,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["sk-c89127398127367e5"],
     active_model: "glm-5.3-flash-free",
     badge: "Chat",
-    connectionsCount: 1,
     available_models: [
       { id: "glm-5.3-flash-free", name: "glm-5.3-flash-free", description: "Model cepat & cerdas dari Ciora" },
       { id: "nvidia/nemotron-3.5-super-v1-free", name: "nvidia/nemotron-3.5-super-v1-free", description: "Super v1 free dari Ciora" },
@@ -113,7 +117,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["sk-proj-openai-live-key"],
     active_model: "gpt-4o",
     badge: "Primary",
-    connectionsCount: 8,
     available_models: [
       { id: "gpt-4o", name: "gpt-4o", description: "Flagship multimodal intelligence & top reasoning" },
       { id: "gpt-4o-mini", name: "gpt-4o-mini", description: "Ringkas, hemat, dan latensi super rendah" },
@@ -130,7 +133,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["sk-ant-api-live-key"],
     active_model: "claude-3-7-sonnet",
     badge: "Coding",
-    connectionsCount: 8,
     available_models: [
       { id: "claude-3-7-sonnet", name: "claude-3-7-sonnet", description: "Claude 3.7 Sonnet - Hybrid reasoning & architecture code" },
       { id: "claude-3-5-sonnet", name: "claude-3-5-sonnet", description: "Industry standard for programming & logic refactoring" },
@@ -146,7 +148,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["AIzaSy-studio-active-key"],
     active_model: "gemini-2.0-flash",
     badge: "Multimodal",
-    connectionsCount: 8,
     available_models: [
       { id: "gemini-2.0-flash", name: "gemini-2.0-flash", description: "Google Gemini 2.0 Flash - Kecepatan tinggi & akurasi tinggi" },
       { id: "gemini-1.5-pro", name: "gemini-1.5-pro", description: "Gemini 1.5 Pro - Context window 2 juta token" },
@@ -162,7 +163,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["sk-deepseek-live-key"],
     active_model: "deepseek-chat",
     badge: "Reasoning",
-    connectionsCount: 8,
     available_models: [
       { id: "deepseek-chat", name: "deepseek-chat", description: "DeepSeek-V3 - Model chat & programming berperforma tinggi" },
       { id: "deepseek-reasoner", name: "deepseek-reasoner", description: "DeepSeek-R1 - Chain-of-thought deep reasoning logic" },
@@ -177,7 +177,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["gsk_groq_lpu_speed_key"],
     active_model: "llama-3.3-70b-versatile",
     badge: "500+ T/s",
-    connectionsCount: 10,
     available_models: [
       { id: "llama-3.3-70b-versatile", name: "llama-3.3-70b-versatile", description: "Meta Llama 3.3 70B di Groq LPU (500+ token/detik)" },
       { id: "deepseek-r1-distill-llama-70b", name: "deepseek-r1-distill-llama-70b", description: "DeepSeek R1 Distill 70B ultra kilat" },
@@ -193,7 +192,6 @@ const INITIAL_PROVIDERS: AIProvider[] = [
     api_keys: ["sk-or-v1-hub-free-key"],
     active_model: "deepseek/deepseek-r1:free",
     badge: "Free Hub",
-    connectionsCount: 9,
     available_models: [
       { id: "deepseek/deepseek-r1:free", name: "deepseek/deepseek-r1:free", description: "DeepSeek R1 reasoning gratis tanpa biaya" },
       { id: "deepseek/deepseek-chat:free", name: "deepseek/deepseek-chat:free", description: "DeepSeek V3 chat general koding" },
@@ -221,6 +219,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeProviderId, setActiveProviderId] = useState<string>("ciora");
   const [activeModel, setActiveModel] = useState<string>("glm-5.3-flash-free");
   const [newKeyInput, setNewKeyInput] = useState<string>("");
+  const apiKeyInputRef = React.useRef<HTMLInputElement>(null);
   const [newModelIdInput, setNewModelIdInput] = useState<string>("");
   const [newModelNameInput, setNewModelNameInput] = useState<string>("");
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
@@ -265,7 +264,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (config.idle_delay_ms) {
         setIdleDelayMs(config.idle_delay_ms);
       }
-      if (config.custom_providers && config.custom_providers.length > 0) {
+      if (config.custom_providers !== undefined) {
         setProviders((prev) => {
           const defaults = prev.filter((p) => p.category === "default");
           const customs: AIProvider[] = config.custom_providers!.map((cp) => ({
@@ -274,14 +273,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             category: "custom",
             protocol: cp.protocol,
             base_url: cp.base_url,
-            api_keys: cp.api_keys,
-            active_model: cp.active_model,
-            available_models: cp.available_models,
+            api_keys: cp.api_keys || [],
+            active_model: cp.active_model || (cp.available_models?.[0]?.id ?? ""),
+            available_models: cp.available_models || [],
             badge: "Custom",
-            connectionsCount: cp.api_keys.length,
           }));
           return [...customs, ...defaults];
         });
+      }
+      if (config.openai_api_key && config.openai_api_key.trim().length > 0) {
+        setProviders((prev) =>
+          prev.map((p) => {
+            if (p.id === "openai" && (!p.api_keys || p.api_keys.length === 0 || p.api_keys[0] === "sk-proj-openai-live-key")) {
+              return { ...p, api_keys: [config.openai_api_key] };
+            }
+            return p;
+          })
+        );
       }
     }
   }, [config]);
@@ -370,7 +378,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         return {
           ...p,
           api_keys: [...p.api_keys, newKeyInput.trim()],
-          connectionsCount: p.api_keys.length + 1,
         };
       }
       return p;
@@ -381,12 +388,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Delete API Key
-  const handleDeleteKey = (keyIndex: number) => {
+  const handleDeleteKey = (keyIndex: number, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (!selectedProvider) return;
     const updated = providers.map((p) => {
       if (p.id === selectedProvider.id) {
         const nextKeys = p.api_keys.filter((_, idx) => idx !== keyIndex);
-        return { ...p, api_keys: nextKeys, connectionsCount: nextKeys.length };
+        return { ...p, api_keys: nextKeys };
       }
       return p;
     });
@@ -407,6 +418,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         return {
           ...p,
           available_models: [...p.available_models, newModel],
+          active_model: p.active_model || newModel.id,
         };
       }
       return p;
@@ -418,19 +430,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Delete Model
-  const handleDeleteModel = (modelId: string) => {
+  const handleDeleteModel = (modelId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (!selectedProvider) return;
+
+    const remainingModels = selectedProvider.available_models.filter((m) => m.id !== modelId);
+    let fallbackModel = activeModel;
+    if (activeModel === modelId) {
+      fallbackModel = remainingModels[0]?.id || "";
+      setActiveModel(fallbackModel);
+    }
+
     const updated = providers.map((p) => {
       if (p.id === selectedProvider.id) {
+        const nextActive = p.active_model === modelId ? (remainingModels[0]?.id || "") : p.active_model;
         return {
           ...p,
-          available_models: p.available_models.filter((m) => m.id !== modelId),
+          active_model: nextActive,
+          available_models: remainingModels,
         };
       }
       return p;
     });
     setProviders(updated);
-    handleSaveAll(updated);
+    handleSaveAll(updated, fallbackModel, activeProviderId);
   };
 
   // Set Active Model
@@ -472,24 +498,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Delete Custom Provider
-  const handleDeleteProvider = (providerId: string) => {
+  const handleDeleteProvider = (providerId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const pToDelete = providers.find((p) => p.id === providerId);
     if (!pToDelete) return;
     if (pToDelete.category !== "custom") {
       alert("Provider default sistem tidak dapat dihapus.");
       return;
     }
-    const confirmed = window.confirm(
-      `Hapus custom provider "${pToDelete.name}"?\nSemua konfigurasi API key dan model untuk provider ini akan dihapus.`
-    );
+
+    let confirmed = true;
+    try {
+      if (typeof window !== "undefined" && typeof window.confirm === "function") {
+        const isTauri = !!(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+        if (!isTauri) {
+          confirmed = window.confirm(
+            `Hapus custom provider "${pToDelete.name}"?\nSemua konfigurasi API key dan model untuk provider ini akan dihapus.`
+          );
+        }
+      }
+    } catch {
+      confirmed = true;
+    }
     if (!confirmed) return;
 
     const updated = providers.filter((p) => p.id !== providerId);
     setProviders(updated);
+
+    let nextActiveP = activeProviderId;
+    let nextActiveM = activeModel;
+    if (activeProviderId === providerId) {
+      const fallback = updated[0];
+      if (fallback) {
+        nextActiveP = fallback.id;
+        nextActiveM = fallback.active_model || fallback.available_models[0]?.id || "";
+        setActiveProviderId(nextActiveP);
+        setActiveModel(nextActiveM);
+      }
+    }
+
     if (selectedProviderId === providerId) {
       setSelectedProviderId(null);
     }
-    handleSaveAll(updated);
+    handleSaveAll(updated, nextActiveM, nextActiveP);
   };
 
   // Open dynamic import modal and query /models endpoint live
@@ -576,7 +630,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       api_keys: newProviderApiKey.trim() ? [newProviderApiKey.trim()] : [],
       active_model: "",
       badge: "Custom",
-      connectionsCount: newProviderApiKey.trim() ? 1 : 0,
       available_models: [],
     };
 
@@ -755,7 +808,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {/* Active Status Badge */}
                       {activeProvider && (
                         <div className="flex items-center gap-2 font-mono text-[11px]">
-                          {(activeProvider.connectionsCount ?? activeProvider.api_keys.length) > 0 ? (
+                          {getProviderConnectionCount(activeProvider) > 0 ? (
                             <span className="px-2.5 py-1 rounded-full bg-white/[0.05] border border-white/10 text-white/80 flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-white/70"></span>
                               <span>Siap Digunakan ({activeProvider.name})</span>
@@ -784,12 +837,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="w-full bg-[#12151b] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white/90 focus:outline-none focus:border-white/25 font-mono cursor-pointer shadow-inner"
                         >
                           {providers.map((p) => {
-                            const isOffline = (p.connectionsCount ?? p.api_keys.length) === 0;
+                            const count = getProviderConnectionCount(p);
+                            const isOffline = count === 0;
                             return (
                               <optgroup
                                 key={p.id}
                                 label={`${p.name} (${p.category === "custom" ? "Custom" : "Default"}${
-                                  isOffline ? " - 0 Key / Offline" : ` - ${p.connectionsCount || p.api_keys.length} Key`
+                                  isOffline ? " - 0 Key / Offline" : ` - ${count} Key`
                                 })`}
                               >
                                 {p.available_models.map((m) => (
@@ -846,7 +900,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                       {customProvidersList.map((cp) => {
-                        const hasConnection = (cp.connectionsCount ?? cp.api_keys.length) > 0;
+                        const count = getProviderConnectionCount(cp);
+                        const hasConnection = count > 0;
                         const isGlobalActive = activeProviderId === cp.id;
 
                         return (
@@ -890,7 +945,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                               <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <button
-                                  onClick={() => handleDeleteProvider(cp.id)}
+                                  type="button"
+                                  onClick={(e) => handleDeleteProvider(cp.id, e)}
                                   className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-red-500/15 text-white/30 hover:text-red-400 flex items-center justify-center transition cursor-pointer"
                                   title={`Hapus ${cp.name}`}
                                 >
@@ -906,7 +962,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   <>
                                     <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                                     <span className="text-white/60">
-                                      {cp.connectionsCount || cp.api_keys.length} Connected
+                                      {count} Connected
                                     </span>
                                   </>
                                 ) : (
@@ -946,7 +1002,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                       {defaultProvidersList.map((dp) => {
-                        const hasConnection = (dp.connectionsCount ?? dp.api_keys.length) > 0;
+                        const count = getProviderConnectionCount(dp);
+                        const hasConnection = count > 0;
                         const isGlobalActive = activeProviderId === dp.id;
 
                         return (
@@ -994,7 +1051,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   <>
                                     <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                                     <span className="text-white/55">
-                                      {dp.connectionsCount || dp.api_keys.length} Connected
+                                      {count} Connected
                                     </span>
                                   </>
                                 ) : (
@@ -1041,10 +1098,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             )}
                           </div>
                           <div className="text-[11px] text-white/40 mt-0.5 font-mono flex items-center gap-1.5">
-                            {selectedProvider.api_keys.length > 0 ? (
+                            {getProviderConnectionCount(selectedProvider) > 0 ? (
                               <>
                                 <span className="w-1.5 h-1.5 rounded-full bg-white/70 shrink-0"></span>
-                                <span>{selectedProvider.api_keys.length} connections aktif (Online)</span>
+                                <span>{getProviderConnectionCount(selectedProvider)} connections aktif (Online)</span>
                               </>
                             ) : (
                               <>
@@ -1058,23 +1115,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                       <div className="flex items-center gap-2">
                         <button
+                          type="button"
                           onClick={() => setSelectedProviderId(null)}
                           className="px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white text-[11px] cursor-pointer transition font-mono flex items-center gap-1.5"
                         >
                           <ArrowLeft size={12} /> Kembali
                         </button>
                         <button
+                          type="button"
                           onClick={() => {
-                            const key = prompt(`Masukkan API Key untuk ${selectedProvider.name}:`, "sk-");
-                            if (key && key.trim()) {
-                              const updated = providers.map((p) =>
-                                p.id === selectedProvider.id
-                                  ? { ...p, api_keys: [...p.api_keys, key.trim()], connectionsCount: p.api_keys.length + 1 }
-                                  : p
-                              );
-                              setProviders(updated);
-                              handleSaveAll(updated);
-                            }
+                            apiKeyInputRef.current?.focus();
+                            apiKeyInputRef.current?.scrollIntoView({ behavior: "smooth" });
                           }}
                           className="px-3 py-1.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-white/90 text-[11px] flex items-center gap-1 cursor-pointer transition font-mono"
                         >
@@ -1082,7 +1133,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </button>
                         {selectedProvider.category === "custom" && (
                           <button
-                            onClick={() => handleDeleteProvider(selectedProvider.id)}
+                            type="button"
+                            onClick={(e) => handleDeleteProvider(selectedProvider.id, e)}
                             className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-[11px] flex items-center gap-1.5 cursor-pointer transition font-mono border border-red-500/20"
                             title="Hapus Custom Provider ini"
                           >
@@ -1189,8 +1241,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 ▷ TEST
                               </button>
                               <button
-                                onClick={() => handleDeleteKey(idx)}
+                                type="button"
+                                onClick={(e) => handleDeleteKey(idx, e)}
                                 className="p-1 rounded-lg hover:bg-red-500/20 text-white/35 hover:text-red-400 cursor-pointer"
+                                title="Hapus Key"
                               >
                                 <Trash2 size={12} />
                               </button>
@@ -1201,13 +1255,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         {/* Add key input row */}
                         <div className="flex items-center gap-2 pt-1 flex-wrap sm:flex-nowrap">
                           <input
+                            ref={apiKeyInputRef}
                             type="password"
                             placeholder="Tambah key baru..."
                             value={newKeyInput}
                             onChange={(e) => setNewKeyInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleAddApiKey();
+                              }
+                            }}
                             className="flex-1 bg-black/40 rounded-xl px-3 py-1.5 text-xs text-white/80 placeholder:text-white/25 focus:outline-none font-mono"
                           />
                           <button
+                            type="button"
                             onClick={handleAddApiKey}
                             className="px-3.5 py-1.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] text-xs text-white/80 font-mono cursor-pointer shrink-0"
                           >
@@ -1309,8 +1370,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   PING
                                 </button>
                                 <button
-                                  onClick={() => handleDeleteModel(m.id)}
+                                  type="button"
+                                  onClick={(e) => handleDeleteModel(m.id, e)}
                                   className="p-1 rounded-lg hover:bg-red-500/20 text-white/30 hover:text-red-400 cursor-pointer"
+                                  title="Hapus Model"
                                 >
                                   <Trash2 size={12} />
                                 </button>

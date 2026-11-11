@@ -85,4 +85,75 @@ describe("SettingsView", () => {
     render(<SettingsView config={customConfig} />);
     expect(screen.getAllByText(/Offline/i).length).toBeGreaterThan(0);
   });
+
+  it("dynamically shows connection count matching api_keys length", () => {
+    const customConfig = {
+      openai_base_url: "https://api.test.com/v1",
+      openai_api_key: "",
+      model_name: "test-m",
+      idle_delay_ms: 2000,
+      watched_paths: [],
+      active_provider: "dynamic-p",
+      custom_providers: [
+        {
+          id: "dynamic-p",
+          name: "Dynamic Provider",
+          protocol: "openai" as const,
+          base_url: "https://dynamic.test/v1",
+          api_keys: ["key-1", "key-2", "key-3"],
+          active_model: "test-m",
+          available_models: [{ id: "test-m", name: "test-m" }],
+        },
+      ],
+    };
+    render(<SettingsView config={customConfig} />);
+    expect(screen.getByText("3 Connected")).toBeTruthy();
+  });
+
+  it("allows deleting custom models inside a provider", () => {
+    const onSave = vi.fn();
+    const customConfig = {
+      openai_base_url: "https://api.test.com/v1",
+      openai_api_key: "",
+      model_name: "model-1",
+      idle_delay_ms: 2000,
+      watched_paths: [],
+      active_provider: "edit-p",
+      custom_providers: [
+        {
+          id: "edit-p",
+          name: "Editable Provider",
+          protocol: "openai" as const,
+          base_url: "https://edit.test/v1",
+          api_keys: ["key-1"],
+          active_model: "model-1",
+          available_models: [
+            { id: "model-1", name: "model-1" },
+            { id: "model-2", name: "model-2" },
+          ],
+        },
+      ],
+    };
+    render(<SettingsView config={customConfig} onSave={onSave} />);
+
+    // Click on Editable Provider to view detail
+    const providerCards = screen.getAllByText("Editable Provider");
+    fireEvent.click(providerCards[providerCards.length - 1]);
+
+    // Both models should be visible in detail view
+    expect(screen.getAllByText("model-1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("model-2").length).toBeGreaterThan(0);
+
+    // Click trash button on model-2
+    const deleteButtons = screen.getAllByTitle("Hapus Model");
+    expect(deleteButtons.length).toBe(2);
+    fireEvent.click(deleteButtons[1]);
+
+    // onSave should be called with remaining model-1 only
+    expect(onSave).toHaveBeenCalled();
+    const savedConfig = onSave.mock.calls[onSave.mock.calls.length - 1][0];
+    const editableP = savedConfig.custom_providers.find((p: { id: string }) => p.id === "edit-p");
+    expect(editableP.available_models).toHaveLength(1);
+    expect(editableP.available_models[0].id).toBe("model-1");
+  });
 });
