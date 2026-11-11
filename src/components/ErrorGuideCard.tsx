@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Check, Code2 } from "lucide-react";
+import { Check, Code2, Copy } from "lucide-react";
 import { CodeError, FixExplanation } from "../types";
 
 interface ErrorGuideCardProps {
@@ -12,6 +12,7 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
   explanation,
 }) => {
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
+  const [copied, setCopied] = useState(false);
 
   const toggleStep = (index: number) => {
     setCompletedSteps((prev) => ({
@@ -20,36 +21,62 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
     }));
   };
 
+  const handleCopyCode = async () => {
+    if (explanation.code_hint) {
+      try {
+        await navigator.clipboard.writeText(explanation.code_hint);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (e) {
+        console.error("Failed to copy", e);
+      }
+    }
+  };
+
   const fileName = error.file_path.split("/").pop() || error.file_path;
 
   return (
-    <div className="space-y-4 text-white/90">
-      {/* File & Line Subtitle */}
-      <div className="flex items-center gap-2 text-[12px] font-mono text-white/40 border-b border-white/[0.07] pb-2">
-        <span>{fileName}</span>
+    <div className="space-y-3.5 text-white/90">
+      {/* File & Line Badge */}
+      <div className="flex items-center gap-2 text-[12px] font-mono text-white/45 pb-1">
+        <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.06] text-white/70">
+          {fileName}
+        </span>
         {error.line_number && (
-          <span className="text-white/60">Line {error.line_number}</span>
+          <span className="text-white/50">Line {error.line_number}</span>
         )}
         {error.project_name && (
-          <span className="ml-auto text-[11px] text-white/30">{error.project_name}</span>
+          <span className="ml-auto text-[11px] text-white/30 truncate max-w-[120px]">
+            {error.project_name}
+          </span>
         )}
       </div>
 
       {/* 1. Problem Statement */}
-      <div className="text-[14px] font-medium text-rose-300/95 leading-snug">
-        {explanation.summary || error.raw_message}
+      <div className="p-3 rounded-2xl bg-rose-500/[0.08] border border-rose-500/15">
+        <div className="text-[11px] font-medium text-rose-300/60 uppercase tracking-wider mb-1">
+          {error.error_type || "Sintaks Error"}
+        </div>
+        <div className="text-[13.5px] font-medium text-rose-200/95 leading-relaxed">
+          {explanation.summary || error.raw_message}
+        </div>
       </div>
 
       {/* 2. Educational Concept */}
-      <div className="text-[13px] text-white/70 font-normal leading-relaxed">
-        {explanation.why_it_happened}
+      <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.05] space-y-1">
+        <div className="text-[11px] font-medium uppercase tracking-wider text-amber-300/70">
+          Kenapa ini terjadi?
+        </div>
+        <p className="text-[13px] text-white/70 leading-relaxed font-normal">
+          {explanation.why_it_happened}
+        </p>
       </div>
 
       {/* 3. Steps Checklist */}
       {explanation.steps && explanation.steps.length > 0 && (
-        <div className="space-y-2 pt-1">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-white/40">
-            Langkah Penyelesaian
+        <div className="space-y-2 pt-0.5">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-white/35 px-1">
+            Langkah Perbaikan
           </div>
           <div className="space-y-1.5">
             {explanation.steps.map((step, idx) => {
@@ -57,11 +84,12 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
               return (
                 <button
                   key={idx}
+                  type="button"
                   onClick={() => toggleStep(idx)}
-                  className={`w-full text-left flex items-start gap-2.5 p-2 rounded-xl transition text-[12.5px] ${
+                  className={`w-full text-left flex items-start gap-2.5 p-2.5 rounded-xl transition text-[12.5px] ${
                     isChecked
                       ? "text-white/30 line-through bg-transparent"
-                      : "text-white/85 bg-white/[0.04] hover:bg-white/[0.08]"
+                      : "text-white/85 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04]"
                   }`}
                 >
                   <div
@@ -83,12 +111,31 @@ export const ErrorGuideCard: React.FC<ErrorGuideCardProps> = ({
 
       {/* 4. Code hint */}
       {explanation.code_hint && (
-        <div className="rounded-xl bg-black/40 border border-white/[0.06] p-3 space-y-1.5">
-          <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-white/40">
-            <Code2 size={12} />
-            <span>Rekomendasi</span>
+        <div className="rounded-2xl bg-black/60 border border-white/[0.08] p-3 space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-white/40">
+            <div className="flex items-center gap-1.5 font-medium uppercase tracking-wider">
+              <Code2 size={13} />
+              <span>Rekomendasi Kode</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              className="flex items-center gap-1 text-[11px] text-white/50 hover:text-white transition px-2 py-0.5 rounded-md hover:bg-white/[0.06]"
+            >
+              {copied ? (
+                <>
+                  <Check size={12} className="text-emerald-400" />
+                  <span className="text-emerald-400">Tersalin</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={12} />
+                  <span>Salin</span>
+                </>
+              )}
+            </button>
           </div>
-          <pre className="text-emerald-300/90 font-mono text-[11.5px] leading-relaxed overflow-x-auto">
+          <pre className="text-emerald-300/90 font-mono text-[12px] leading-relaxed overflow-x-auto p-1">
             {explanation.code_hint}
           </pre>
         </div>

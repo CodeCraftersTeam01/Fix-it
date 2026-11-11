@@ -245,6 +245,17 @@ pub fn run() {
             commands::ask_followup
         ])
         .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = window_vibrancy::apply_vibrancy(
+                        &win,
+                        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                        Some(window_vibrancy::NSVisualEffectState::Active),
+                        Some(32.0),
+                    );
+                }
+            }
             let _ = setup_tray(app.handle());
             setup_background_service(&app.handle().clone(), &initial_config);
             Ok(())

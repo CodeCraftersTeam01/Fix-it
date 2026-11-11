@@ -1057,6 +1057,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-test",
+ "window-vibrancy",
 ]
 
 [[package]]

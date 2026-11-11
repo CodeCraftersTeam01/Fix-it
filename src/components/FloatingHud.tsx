@@ -69,7 +69,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     <div
       onMouseDown={handleStartDrag}
       data-tauri-drag-region
-      className="w-full h-full rounded-[34px] apple-hud-glass flex flex-col overflow-hidden relative select-none cursor-grab active:cursor-grabbing"
+      className="w-full h-full rounded-[32px] apple-hud-glass flex flex-col overflow-hidden relative select-none cursor-grab active:cursor-grabbing"
     >
       {/* Top Header Buttons */}
       <HeaderBar
@@ -112,11 +112,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         {/* Active Error Guide */}
         {currentError && explanation ? (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-[11px] text-white/40">
-              <span>Error aktif</span>
+            <div className="flex items-center justify-between text-[11px] text-white/40 pb-0.5">
+              <span className="flex items-center gap-1.5 font-medium text-amber-300/80">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Error Terdeteksi
+              </span>
               <button
+                type="button"
                 onClick={onClearError}
-                className="hover:text-white transition text-[11px] underline underline-offset-2"
+                className="hover:text-white transition text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.08]"
               >
                 Kembali standby
               </button>
@@ -124,18 +128,38 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             <ErrorGuideCard error={currentError} explanation={explanation} />
           </div>
         ) : (
-          /* Clean Standby State - Zero Slop */
-          <div className="space-y-3 pt-1">
-            <p className="text-[13.5px] text-white/50 leading-relaxed font-normal">
-              FixIt memantau folder kodinganmu di latar belakang. Jika terjadi error, langkah perbaikannya akan muncul di sini.
-            </p>
+          /* Cozy Standby State (Zero AI Slop) */
+          <div className="space-y-4 pt-1">
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[12px] font-medium text-emerald-400/90 tracking-wide">
+                  Standby Memantau
+                </span>
+              </div>
+              <p className="text-[13px] text-white/70 leading-relaxed font-normal">
+                Fokus ngoding aja. Kalau ada error sintaks atau runtime macet, solusinya langsung muncul di sini.
+              </p>
+              {settings.watched_paths && settings.watched_paths.length > 0 && (
+                <div className="text-[11px] font-mono text-white/35 truncate pt-1 border-t border-white/[0.04]">
+                  📁 {settings.watched_paths[0]}
+                </div>
+              )}
+            </div>
 
-            <button
-              onClick={onSimulateError}
-              className="text-[12px] text-white/40 hover:text-white/80 transition underline underline-offset-4"
-            >
-              Simulasikan deteksi error
-            </button>
+            <div className="space-y-2 pt-1">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-white/30 px-1">
+                Uji Coba Asisten
+              </div>
+              <button
+                type="button"
+                onClick={onSimulateError}
+                className="w-full text-left flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.04] transition text-[12.5px] text-white/80 group cursor-pointer"
+              >
+                <span>Simulasikan deteksi error PHP</span>
+                <span className="text-white/30 group-hover:text-white/70 transition">→</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -171,7 +195,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       <AskBar
         onSendMessage={onSendMessage}
         disabled={isLoading}
-        placeholder="Ask FixIt"
+        placeholder="Tanya FixIt apa saja..."
       />
     </div>
   );
