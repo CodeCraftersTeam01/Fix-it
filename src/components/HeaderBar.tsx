@@ -31,7 +31,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           onClose?.();
         }}
         aria-label="Close"
-        title="Tutup FixIt"
+        title="Sembunyikan ke Background"
         className="w-9 h-9 rounded-full apple-pill-btn flex items-center justify-center text-white/85 hover:text-white transition cursor-pointer"
       >
         <X size={16} strokeWidth={2.2} />

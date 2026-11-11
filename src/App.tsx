@@ -54,14 +54,14 @@ export function App() {
   const handleClose = async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("close_window");
+      await invoke("hide_window");
     } catch {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const appWindow = getCurrentWindow();
-        await appWindow.close();
+        await appWindow.hide();
       } catch (err) {
-        console.log("HUD closed in browser mode", err);
+        console.log("HUD hidden in browser mode", err);
       }
     }
   };

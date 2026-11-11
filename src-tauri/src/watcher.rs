@@ -46,9 +46,24 @@ impl SmartIdleWatcher {
             while let Ok(event_res) = rx.recv() {
                 if let Ok(Event { paths, .. }) = event_res {
                     if let Some(first_path) = paths.into_iter().next() {
-                        // Skip temporary files, git folders, and node_modules
+                        // Skip non-files, temporary files, git folders, target, and node_modules
                         let path_str = first_path.to_string_lossy();
-                        if path_str.contains(".git") || path_str.contains("node_modules") || path_str.contains(".tmp") {
+                        if path_str.contains(".git")
+                            || path_str.contains("node_modules")
+                            || path_str.contains("/target/")
+                            || path_str.contains(".tmp")
+                            || path_str.ends_with('~')
+                            || path_str.ends_with(".swp")
+                        {
+                            continue;
+                        }
+
+                        // Only watch supported code files
+                        let is_code = first_path.extension().map_or(false, |ext| {
+                            let e = ext.to_string_lossy().to_lowercase();
+                            matches!(e.as_str(), "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "json")
+                        });
+                        if !is_code {
                             continue;
                         }
 

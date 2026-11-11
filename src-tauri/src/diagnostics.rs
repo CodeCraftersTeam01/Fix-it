@@ -53,7 +53,28 @@ impl DiagnosticsParser {
             });
         }
 
-        // 3. Node/JS stack trace: ReferenceError: x is not defined at Object.<anonymous> (/path/file.js:15:3)
+        // 3. Node.js check syntax (node -c): /path/file.js:2\n...\nSyntaxError: Unexpected token
+        if let Some(first_line) = output.lines().next() {
+            if let Some((fpath, lstr)) = first_line.trim().rsplit_once(':') {
+                if let Ok(line_num) = lstr.parse::<usize>() {
+                    let err_re = Regex::new(r"(?m)^([A-Za-z0-9_]*Error):\s*(.*)").ok()?;
+                    if let Some(caps) = err_re.captures(output) {
+                        let error_type = caps.get(1).map_or("SyntaxError", |m| m.as_str()).to_string();
+                        let raw_message = caps.get(2).map_or("", |m| m.as_str()).to_string();
+                        return Some(CodeError {
+                            file_path: fpath.to_string(),
+                            line_number: Some(line_num),
+                            error_type,
+                            raw_message,
+                            snippet: None,
+                            project_name: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        // 4. Node/JS stack trace: ReferenceError: x is not defined at Object.<anonymous> (/path/file.js:15:3)
         let js_re = Regex::new(r"(?i)([A-Za-z0-9_]*Error):\s*(.*?)\s+at\s+.*?\((.*?):(\d+):(\d+)\)").ok()?;
         if let Some(caps) = js_re.captures(output) {
             let error_type = caps.get(1).map_or("Error", |m| m.as_str()).to_string();
@@ -76,10 +97,10 @@ impl DiagnosticsParser {
 
     /// Check a single file for basic syntax issues based on its extension
     pub fn inspect_file(path: &Path) -> Option<CodeError> {
-        let ext = path.extension()?.to_str()?;
+        let ext = path.extension()?.to_str()?.to_lowercase();
         let path_str = path.to_string_lossy().to_string();
 
-        match ext {
+        match ext.as_str() {
             "php" => {
                 // Check with php -l if PHP is installed locally
                 if let Ok(out) = std::process::Command::new("php").args(["-l", &path_str]).output() {
@@ -94,6 +115,15 @@ impl DiagnosticsParser {
             "py" => {
                 // Check with python3 -m py_compile
                 if let Ok(out) = std::process::Command::new("python3").args(["-m", "py_compile", &path_str]).output() {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    if !out.status.success() {
+                        return Self::parse_log_or_terminal_output(&stderr);
+                    }
+                }
+            }
+            "js" | "mjs" | "cjs" => {
+                // Check syntax with node -c
+                if let Ok(out) = std::process::Command::new("node").args(["-c", &path_str]).output() {
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     if !out.status.success() {
                         return Self::parse_log_or_terminal_output(&stderr);
@@ -148,6 +178,19 @@ mod tests {
         assert_eq!(err.error_type, "ReferenceError");
         assert_eq!(err.line_number, Some(15));
         assert!(err.file_path.ends_with("cart.js"));
+    }
+
+    #[test]
+    fn test_parse_node_check_syntax_error() {
+        let sample = "/Users/student/Herd/FixIt/server.js:2\n  return 1;\n         ^\n\nSyntaxError: Unexpected number\n    at wrapSafe (node:internal/modules/cjs/loader:1866:18)";
+        let parsed = DiagnosticsParser::parse_log_or_terminal_output(sample);
+
+        assert!(parsed.is_some());
+        let err = parsed.unwrap();
+        assert_eq!(err.error_type, "SyntaxError");
+        assert_eq!(err.line_number, Some(2));
+        assert!(err.file_path.ends_with("server.js"));
+        assert_eq!(err.raw_message, "Unexpected number");
     }
 }
 

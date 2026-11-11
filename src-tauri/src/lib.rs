@@ -3,7 +3,7 @@ pub mod config;
 pub mod diagnostics;
 pub mod watcher;
 
-use ai_client::AiClient;
+use ai_client::{AiClient, FixExplanation};
 use config::AppConfig;
 use diagnostics::DiagnosticsParser;
 use std::path::PathBuf;
@@ -20,6 +20,22 @@ pub struct AppState {
     pub config: Arc<Mutex<AppConfig>>,
 }
 
+pub fn init_env_path() {
+    let mut paths = vec![
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+    ];
+    if let Some(home) = dirs::home_dir() {
+        paths.push(format!("{}/.local/bin", home.display()));
+        paths.push(format!("{}/Library/Application Support/Herd/bin", home.display()));
+    }
+    if let Ok(current_path) = std::env::var("PATH") {
+        paths.push(current_path);
+    }
+    let new_path = paths.join(":");
+    std::env::set_var("PATH", new_path);
+}
+
 pub mod commands {
     use super::*;
     use crate::ai_client::FixExplanation;
@@ -32,7 +48,8 @@ pub mod commands {
 
     #[tauri::command]
     pub async fn close_window(window: Window) -> Result<(), String> {
-        window.close().map_err(|e| e.to_string())
+        // Closing via popup 'X' button only hides the window so background watcher remains active!
+        window.hide().map_err(|e| e.to_string())
     }
 
     #[tauri::command]
@@ -117,8 +134,8 @@ pub mod commands {
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Buka FixIt", true, None::<&str>)?;
-    let hide_item = MenuItem::with_id(app, "hide", "Sembunyikan", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Keluar", true, None::<&str>)?;
+    let hide_item = MenuItem::with_id(app, "hide", "Sembunyikan Jendela", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Keluar FixIt (Hentikan Background)", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
 
     let icon = tauri::include_image!("icons/tray.png");
@@ -128,7 +145,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("FixIt - Coding Assistant")
+        .tooltip("FixIt - Coding Assistant (Aktif di Background)")
         .on_menu_event(|app, event| {
             match event.id.as_ref() {
                 "show" => {
@@ -143,6 +160,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 "quit" => {
+                    // This is the ONLY way to exit the app and terminate background service
                     app.exit(0);
                 }
                 _ => {}
@@ -210,12 +228,24 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
 
                 let state: tauri::State<AppState> = app_inner.state();
                 let conf = state.config.lock().await;
-                if let Ok(explanation) = AiClient::analyze_error(&err, &conf).await {
-                    let _ = app_inner.emit("fixit-error-detected", serde_json::json!({
-                        "error": err,
-                        "explanation": explanation
-                    }));
-                }
+                let explanation = match AiClient::analyze_error(&err, &conf).await {
+                    Ok(exp) => exp,
+                    Err(_) => FixExplanation {
+                        summary: format!("Terdeteksi {} pada baris {:?}", err.error_type, err.line_number.unwrap_or(0)),
+                        why_it_happened: format!("Pesan error: {}", err.raw_message),
+                        steps: vec![
+                            "Periksa sintaks pada baris terkait.".to_string(),
+                            "Pastikan struktur kode dan tanda kurung sudah benar.".to_string(),
+                            "Simpan kembali berkas (Cmd + S).".to_string(),
+                        ],
+                        code_hint: err.snippet.clone(),
+                    },
+                };
+
+                let _ = app_inner.emit("fixit-error-detected", serde_json::json!({
+                    "error": err,
+                    "explanation": explanation
+                }));
 
                 if let Some(win) = app_inner.get_webview_window("main") {
                     let _ = win.show();
@@ -227,6 +257,7 @@ pub fn setup_background_service(app: &AppHandle, config: &AppConfig) {
 }
 
 pub fn run() {
+    init_env_path();
     let initial_config = AppConfig::load();
     let app_state = AppState {
         config: Arc::new(Mutex::new(initial_config.clone())),
@@ -244,6 +275,13 @@ pub fn run() {
             commands::analyze_code_error,
             commands::ask_followup
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent destroying the window; hide it so background monitoring stays alive!
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             {

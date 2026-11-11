@@ -29,16 +29,39 @@ impl AppConfig {
         base.join("fixit").join("config.json")
     }
 
+    pub fn default_watched_paths() -> Vec<String> {
+        let mut paths = Vec::new();
+        if let Some(home) = dirs::home_dir() {
+            let herd = home.join("Herd");
+            if herd.exists() {
+                paths.push(herd.to_string_lossy().to_string());
+            } else {
+                paths.push(home.to_string_lossy().to_string());
+            }
+        }
+        if paths.is_empty() {
+            if let Ok(cwd) = std::env::current_dir() {
+                paths.push(cwd.to_string_lossy().to_string());
+            }
+        }
+        paths
+    }
+
     pub fn load() -> Self {
+        let mut config = Self::default();
         let path = Self::config_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(config) = serde_json::from_str::<AppConfig>(&content) {
-                    return config;
+                if let Ok(loaded) = serde_json::from_str::<AppConfig>(&content) {
+                    config = loaded;
                 }
             }
         }
-        Self::default()
+        if config.watched_paths.is_empty() {
+            config.watched_paths = Self::default_watched_paths();
+            let _ = config.save();
+        }
+        config
     }
 
     pub fn save(&self) -> Result<(), String> {
