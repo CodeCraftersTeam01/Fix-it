@@ -54,6 +54,7 @@ pub mod commands {
 
     #[tauri::command]
     pub async fn hide_window(window: Window) -> Result<(), String> {
+        let _ = window.emit("fixit-reset-standby", ());
         window.hide().map_err(|e| e.to_string())
     }
 
@@ -384,6 +385,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "hide" => {
                     if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.emit("fixit-reset-standby", ());
                         let _ = win.hide();
                     }
                     if let Some(win) = app.get_webview_window("settings") {
@@ -605,6 +607,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Prevent destroying the window; hide it so background monitoring stays alive!
                 api.prevent_close();
+                let _ = window.emit("fixit-reset-standby", ());
                 let _ = window.hide();
             }
         })

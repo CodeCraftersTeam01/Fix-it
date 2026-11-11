@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from "react";
+import { X } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
@@ -80,7 +81,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     >
       {/* Top Header Bar (Only region allowed for dragging) */}
       <HeaderBar
-        onClose={onClose}
+        onClose={() => {
+          if (currentError) {
+            onClearError();
+          }
+          onClose();
+        }}
         onExpand={onExpand}
         isExpanded={isExpanded}
         onOpenSettings={onOpenSettings}
@@ -126,9 +132,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               <button
                 type="button"
                 onClick={onClearError}
-                className="hover:text-white transition text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.08]"
+                className="hover:text-white transition text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.08] flex items-center gap-1.5 cursor-pointer text-white/70 hover:text-white"
+                title="Tutup error dan kembali ke mode standby"
               >
-                Kembali standby
+                <span>Kembali standby</span>
+                <X size={12} className="opacity-70" />
               </button>
             </div>
             <ErrorGuideCard error={currentError} explanation={explanation} />

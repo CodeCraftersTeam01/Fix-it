@@ -83,6 +83,11 @@ export function App() {
             await invoke("open_settings_window");
           } catch {}
         });
+        await listen("fixit-reset-standby", () => {
+          handleClearError();
+          setIsAnalyzing(false);
+          setAnalyzingInfo(null);
+        });
       } catch {
         // Running in standard browser preview
       }
@@ -90,9 +95,24 @@ export function App() {
 
     loadConfig();
     setupTauriEvents();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
   const handleClose = async () => {
+    // Reset status error & analisa ke mode standby saat pop-up ditutup / disilang
+    handleClearError();
+    setIsAnalyzing(false);
+    setAnalyzingInfo(null);
+
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("hide_window");
