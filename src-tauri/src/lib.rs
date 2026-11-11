@@ -1,6 +1,7 @@
 pub mod ai_client;
 pub mod config;
 pub mod diagnostics;
+pub mod runtime_parser;
 pub mod watcher;
 
 use ai_client::{AiClient, FixExplanation};
