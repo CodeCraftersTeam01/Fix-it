@@ -2,12 +2,12 @@ import { useState, useEffect } from "react";
 import { FloatingHud } from "./components/FloatingHud";
 import { SettingsView } from "./components/settings/SettingsView";
 import { AppSettings } from "./components/settings/types";
-import { CodeError, FixExplanation, ChatMessage, FileActivity } from "./types";
+import { CodeError, FixExplanation, ChatMessage, FileActivity, ActiveErrorItem } from "./types";
 
 export function App() {
   const isSettingsRoute = typeof window !== "undefined" && window.location.hash === "#settings";
-  const [currentError, setCurrentError] = useState<CodeError | null>(null);
-  const [explanation, setExplanation] = useState<FixExplanation | null>(null);
+  const [activeErrors, setActiveErrors] = useState<ActiveErrorItem[]>([]);
+  const [selectedErrorIndex, setSelectedErrorIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingInfo, setAnalyzingInfo] = useState<{
     file_name: string;
@@ -27,6 +27,36 @@ export function App() {
     watched_paths: ["/Users/arjunalanangadiwarsana/Herd/FixIt"],
     active_provider: "ciora",
   });
+
+  const pathMatches = (p1: string, p2: string) => {
+    const norm1 = p1.trim().replace(/\\/g, "/");
+    const norm2 = p2.trim().replace(/\\/g, "/");
+    if (!norm1 || !norm2) return false;
+    if (norm1 === norm2) return true;
+    if (norm1.endsWith(norm2) && norm1.slice(0, norm1.length - norm2.length).endsWith("/")) {
+      return true;
+    }
+    if (norm2.endsWith(norm1) && norm2.slice(0, norm2.length - norm1.length).endsWith("/")) {
+      return true;
+    }
+    return false;
+  };
+
+  const removeErrorByPath = (filePath: string) => {
+    setActiveErrors((prev) => {
+      const remaining = prev.filter(
+        (item) => !pathMatches(item.error.file_path, filePath)
+      );
+      if (remaining.length === 0) {
+        setSelectedErrorIndex(0);
+      } else {
+        setSelectedErrorIndex((curr) =>
+          Math.min(curr, Math.max(0, remaining.length - 1))
+        );
+      }
+      return remaining;
+    });
+  };
 
   useEffect(() => {
     // 1. Try to load config from Tauri backend
@@ -53,15 +83,52 @@ export function App() {
             setAnalyzingInfo(event.payload);
           }
         );
-        await listen<{ error: CodeError; explanation: FixExplanation }>(
-          "fixit-error-detected",
-          (event) => {
-            setIsAnalyzing(false);
-            setAnalyzingInfo(null);
-            setCurrentError(event.payload.error);
-            setExplanation(event.payload.explanation);
+        await listen<{
+          error: CodeError;
+          explanation: FixExplanation;
+          hit_count?: number;
+          is_looping?: boolean;
+        }>("fixit-error-detected", (event) => {
+          setIsAnalyzing(false);
+          setAnalyzingInfo(null);
+          const payload = event.payload;
+
+          setActiveErrors((prev) => {
+            const idx = prev.findIndex((item) =>
+              pathMatches(item.error.file_path, payload.error.file_path)
+            );
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = {
+                ...updated[idx],
+                error: payload.error,
+                explanation: payload.explanation || updated[idx].explanation,
+                hit_count: payload.hit_count ?? (updated[idx].hit_count + 1),
+                is_looping: payload.is_looping ?? updated[idx].is_looping,
+                timestamp: Date.now(),
+              };
+              return updated;
+            } else {
+              setSelectedErrorIndex(prev.length);
+              return [
+                ...prev,
+                {
+                  id: payload.error.file_path,
+                  error: payload.error,
+                  explanation: payload.explanation,
+                  hit_count: payload.hit_count ?? 1,
+                  is_looping: payload.is_looping ?? false,
+                  timestamp: Date.now(),
+                },
+              ];
+            }
+          });
+        });
+        await listen<{ file_path: string }>("fixit-error-resolved", (event) => {
+          if (event.payload?.file_path) {
+            removeErrorByPath(event.payload.file_path);
           }
-        );
+        });
         await listen<FileActivity>("fixit-file-writing", (event) => {
           setActiveFileActivity(event.payload);
         });
@@ -70,12 +137,9 @@ export function App() {
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
           // Auto-clear active error if student fixed the broken file
-          setCurrentError((prev) => {
-            if (prev && prev.file_path === event.payload.file_path) {
-              return null;
-            }
-            return prev;
-          });
+          if (event.payload?.file_path) {
+            removeErrorByPath(event.payload.file_path);
+          }
         });
         await listen("open-settings", async () => {
           try {
@@ -107,9 +171,17 @@ export function App() {
     };
   }, []);
 
+  const handleClearSingleError = async (filePath: string) => {
+    removeErrorByPath(filePath);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("clear_active_error", { filePath });
+    } catch {}
+  };
+
   const handleClose = async () => {
     // Reset status error & analisa ke mode standby saat pop-up ditutup / disilang
-    handleClearError();
+    await handleClearError();
     setIsAnalyzing(false);
     setAnalyzingInfo(null);
 
@@ -175,15 +247,15 @@ export function App() {
   const handleSimulateError = () => {
     setIsLoading(true);
     setTimeout(() => {
-      setCurrentError({
+      const simError: CodeError = {
         file_path: "app/Http/Controllers/StudentController.php",
         line_number: 28,
         error_type: "ParseError",
         raw_message: "syntax error, unexpected token ';', expecting ')'",
         project_name: "Praktikum-Web",
-      });
+      };
 
-      setExplanation({
+      const simExplanation: FixExplanation = {
         summary: "Sintaks penutupan tanda kurung fungsi belum lengkap di baris 28.",
         why_it_happened:
           "PHP mengharapkan tanda kurung tutup ')' sebelum titik koma ';' saat mendeklarasikan parameter atau pemanggilan method berantai.",
@@ -193,15 +265,49 @@ export function App() {
           "Simpan file kembali (Cmd + S) setelah menambahkan tanda kurung tutup.",
         ],
         code_hint: "$data = Student::where('nim', $nim)->first();",
+      };
+
+      setActiveErrors((prev) => {
+        const idx = prev.findIndex((item) =>
+          pathMatches(item.error.file_path, simError.file_path)
+        );
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = {
+            ...copy[idx],
+            error: simError,
+            explanation: simExplanation,
+            hit_count: copy[idx].hit_count + 1,
+            timestamp: Date.now(),
+          };
+          return copy;
+        } else {
+          setSelectedErrorIndex(prev.length);
+          return [
+            ...prev,
+            {
+              id: simError.file_path,
+              error: simError,
+              explanation: simExplanation,
+              hit_count: 1,
+              is_looping: false,
+              timestamp: Date.now(),
+            },
+          ];
+        }
       });
 
       setIsLoading(false);
     }, 400);
   };
 
-  const handleClearError = () => {
-    setCurrentError(null);
-    setExplanation(null);
+  const handleClearError = async () => {
+    setActiveErrors([]);
+    setSelectedErrorIndex(0);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("clear_active_error", { filePath: null });
+    } catch {}
   };
 
   const handleSendMessage = async (text: string) => {
@@ -256,6 +362,10 @@ export function App() {
     }
   };
 
+  const currentActive = activeErrors[selectedErrorIndex] ?? null;
+  const currentError = currentActive ? currentActive.error : null;
+  const explanation = currentActive ? currentActive.explanation : null;
+
   if (isSettingsRoute) {
     return (
       <div className="w-screen h-screen p-2 bg-transparent select-none">
@@ -272,6 +382,10 @@ export function App() {
     <FloatingHud
       currentError={currentError}
       explanation={explanation}
+      activeErrors={activeErrors}
+      selectedErrorIndex={selectedErrorIndex}
+      onSelectError={setSelectedErrorIndex}
+      onClearSingleError={handleClearSingleError}
       isAnalyzing={isAnalyzing}
       analyzingInfo={analyzingInfo}
       messages={messages}
@@ -291,3 +405,4 @@ export function App() {
 }
 
 export default App;
+

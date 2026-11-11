@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { FloatingHud } from "../FloatingHud";
+import { ActiveErrorItem } from "../../types";
 
 describe("FloatingHud standby reset", () => {
   const dummyError = {
@@ -99,6 +100,139 @@ describe("FloatingHud standby reset", () => {
           el?.textContent ===
           "Tabel database 'orders' belum dibuat atau belum dimigrasi"
       )
+    ).toBeDefined();
+  });
+
+  it("renders multiple tabs when activeErrors.length > 1 and clicking switches tab", () => {
+    const error1: ActiveErrorItem = {
+      id: "app/Http/Controllers/UserController.php",
+      error: {
+        file_path: "app/Http/Controllers/UserController.php",
+        line_number: 12,
+        error_type: "ParseError",
+        raw_message: "syntax error in UserController",
+        project_name: "FixIt",
+      },
+      explanation: {
+        summary: "Syntax error in UserController",
+        why_it_happened: "Missing semicolon",
+        steps: ["Fix UserController"],
+        code_hint: "$x = 1;",
+      },
+      hit_count: 1,
+      is_looping: false,
+      timestamp: Date.now(),
+    };
+
+    const error2: ActiveErrorItem = {
+      id: "app/Models/Order.php",
+      error: {
+        file_path: "app/Models/Order.php",
+        line_number: 40,
+        error_type: "FatalError",
+        raw_message: "Class not found in Order",
+        project_name: "FixIt",
+      },
+      explanation: {
+        summary: "Class Order not found",
+        why_it_happened: "Wrong namespace",
+        steps: ["Fix Order namespace"],
+        code_hint: "use App\\Models\\Order;",
+      },
+      hit_count: 1,
+      is_looping: false,
+      timestamp: Date.now(),
+    };
+
+    const onSelectError = vi.fn();
+
+    const { rerender } = render(
+      <FloatingHud
+        activeErrors={[error1, error2]}
+        selectedErrorIndex={0}
+        onSelectError={onSelectError}
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    // Multi-error count header
+    expect(screen.getByText(/2 Error Terdeteksi/)).toBeDefined();
+
+    // Tabs rendered
+    expect(screen.getAllByText("UserController.php").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Order.php")).toBeDefined();
+    expect(screen.getAllByText(/Line 12/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Line 40/)).toBeDefined();
+
+    // Currently showing error1
+    expect(
+      screen.getByText(
+        (_, el) => el?.textContent === "Syntax error in UserController"
+      )
+    ).toBeDefined();
+
+    // Click tab 2
+    fireEvent.click(screen.getByRole("button", { name: /Order\.php/ }));
+    expect(onSelectError).toHaveBeenCalledWith(1);
+
+    // If rerendered with selectedErrorIndex = 1
+    rerender(
+      <FloatingHud
+        activeErrors={[error1, error2]}
+        selectedErrorIndex={1}
+        onSelectError={onSelectError}
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByText(
+        (_, el) => el?.textContent === "Class Order not found"
+      )
+    ).toBeDefined();
+  });
+
+  it("renders loop/interval warning badge when is_looping is true", () => {
+    const loopingError: ActiveErrorItem = {
+      id: "resources/js/polling.js",
+      error: {
+        file_path: "resources/js/polling.js",
+        line_number: 88,
+        error_type: "TypeError",
+        raw_message: "Cannot read properties of undefined (reading 'data')",
+        project_name: "FixIt",
+      },
+      explanation: {
+        summary: "Data undefined dalam interval fetch",
+        why_it_happened: "Interval memanggil data sebelum response selesai.",
+        steps: ["Cek apakah response sudah ready"],
+        code_hint: "if (res && res.data) { ... }",
+      },
+      hit_count: 14,
+      is_looping: true,
+      timestamp: Date.now(),
+    };
+
+    render(
+      <FloatingHud
+        activeErrors={[loopingError]}
+        selectedErrorIndex={0}
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    // Badge should be rendered with hit count
+    expect(
+      screen.getByText(/Loop \/ setInterval Terdeteksi.*14x/)
     ).toBeDefined();
   });
 });

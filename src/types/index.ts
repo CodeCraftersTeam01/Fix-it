@@ -29,3 +29,13 @@ export interface FileActivity {
   status: string;
   timestamp: number;
 }
+
+export interface ActiveErrorItem {
+  id: string; // file_path
+  error: CodeError;
+  explanation: FixExplanation;
+  hit_count: number;
+  is_looping: boolean;
+  timestamp: number;
+}
+

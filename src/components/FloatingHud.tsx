@@ -1,14 +1,18 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
 import { AskBar } from "./AskBar";
 import { AppSettings } from "./SettingsModal";
-import { CodeError, FixExplanation, ChatMessage, FileActivity } from "../types";
+import { CodeError, FixExplanation, ChatMessage, FileActivity, ActiveErrorItem } from "../types";
 
 interface FloatingHudProps {
   currentError?: CodeError | null;
   explanation?: FixExplanation | null;
+  activeErrors?: ActiveErrorItem[];
+  selectedErrorIndex?: number;
+  onSelectError?: (index: number) => void;
+  onClearSingleError?: (filePath: string) => void;
   isAnalyzing?: boolean;
   analyzingInfo?: { file_name: string; line?: number; error_type?: string } | null;
   messages: ChatMessage[];
@@ -28,6 +32,10 @@ interface FloatingHudProps {
 export const FloatingHud: React.FC<FloatingHudProps> = ({
   currentError,
   explanation,
+  activeErrors = [],
+  selectedErrorIndex = 0,
+  onSelectError,
+  onClearSingleError: _onClearSingleError,
   isAnalyzing = false,
   analyzingInfo = null,
   messages,
@@ -45,11 +53,43 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const effectiveActiveErrors: ActiveErrorItem[] = useMemo(() => {
+    if (activeErrors && activeErrors.length > 0) {
+      return activeErrors;
+    }
+    if (currentError && explanation) {
+      return [
+        {
+          id: currentError.file_path,
+          error: currentError,
+          explanation: explanation,
+          hit_count: 1,
+          is_looping: false,
+          timestamp: Date.now(),
+        },
+      ];
+    }
+    return [];
+  }, [activeErrors, currentError, explanation]);
+
+  const activeIndex = Math.min(
+    Math.max(0, selectedErrorIndex),
+    Math.max(0, effectiveActiveErrors.length - 1)
+  );
+  const activeItem = effectiveActiveErrors[activeIndex] ?? null;
+  const activeError = activeItem ? activeItem.error : (currentError ?? null);
+  const activeExplanation = activeItem ? activeItem.explanation : (explanation ?? null);
+
+  const getFileName = (filePath: string) => {
+    const parts = filePath.replace(/\\/g, "/").split("/");
+    return parts[parts.length - 1] || filePath;
+  };
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, explanation, currentError]);
+  }, [messages, activeExplanation, activeError, activeIndex]);
 
   const handleStartDrag = async (e: React.MouseEvent) => {
     // Only drag on left click and not on interactive buttons/inputs
@@ -82,7 +122,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       {/* Top Header Bar (Only region allowed for dragging) */}
       <HeaderBar
         onClose={() => {
-          if (currentError) {
+          if (activeError) {
             onClearError();
           }
           onClose();
@@ -122,12 +162,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               )}
             </div>
           </div>
-        ) : currentError && explanation ? (
+        ) : activeError && activeExplanation ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-[11px] text-white/40 pb-0.5">
               <span className="flex items-center gap-1.5 font-medium text-white/80">
                 <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
-                Error Terdeteksi
+                {effectiveActiveErrors.length > 1
+                  ? `${effectiveActiveErrors.length} Error Terdeteksi`
+                  : "Error Terdeteksi"}
               </span>
               <button
                 type="button"
@@ -139,7 +181,47 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 <X size={12} className="opacity-70" />
               </button>
             </div>
-            <ErrorGuideCard error={currentError} explanation={explanation} />
+
+            {/* Horizontal scrollable cozy pill tabs when multiple errors exist */}
+            {effectiveActiveErrors.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
+                {effectiveActiveErrors.map((item, idx) => {
+                  const isActive = idx === activeIndex;
+                  const fileName = getFileName(item.error.file_path);
+                  return (
+                    <button
+                      key={item.id || item.error.file_path || idx}
+                      type="button"
+                      onClick={() => onSelectError?.(idx)}
+                      className={`shrink-0 px-2.5 py-1 rounded-xl text-[11px] font-sans flex items-center gap-1.5 transition border ${
+                        isActive
+                          ? "bg-white/15 text-white border-white/20 shadow-sm"
+                          : "bg-white/[0.04] text-white/50 hover:text-white/80 border-transparent hover:border-white/10"
+                      }`}
+                    >
+                      <span className="truncate max-w-[120px] font-medium">{fileName}</span>
+                      {item.error.line_number && (
+                        <span className="text-[10px] opacity-60 font-mono">
+                          Line {item.error.line_number}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Warning badge when loop / setInterval detected */}
+            {activeItem && (activeItem.is_looping || activeItem.hit_count > 1) && (
+              <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[11px] px-2.5 py-1 rounded-xl flex items-center gap-1.5">
+                <span>⚡</span>
+                <span>
+                  Loop / setInterval Terdeteksi (Terjadi {activeItem.hit_count}x)
+                </span>
+              </div>
+            )}
+
+            <ErrorGuideCard error={activeError} explanation={activeExplanation} />
           </div>
         ) : (
           /* Live IDE & File Activity Card (Clean, Cozy H3 with filename below, Zero Slop) */
