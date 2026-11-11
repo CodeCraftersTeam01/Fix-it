@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SettingsView } from "../settings/SettingsView";
 
 describe("SettingsView", () => {
@@ -155,5 +155,21 @@ describe("SettingsView", () => {
     const editableP = savedConfig.custom_providers.find((p: { id: string }) => p.id === "edit-p");
     expect(editableP.available_models).toHaveLength(1);
     expect(editableP.available_models[0].id).toBe("model-1");
+  });
+
+  it("renders launch at login toggle in general settings and allows toggling", async () => {
+    render(<SettingsView />);
+    const generalTab = screen.getByText("Pengaturan Umum");
+    fireEvent.click(generalTab);
+
+    expect(screen.getByText("Launch at Login (Mulai Otomatis)")).toBeTruthy();
+    expect(screen.getByText(/Nonaktif \(Manual\)/i)).toBeTruthy();
+
+    const toggleBtn = screen.getByLabelText("Toggle Launch at Login");
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Aktif \(Auto-start saat login sistem\)/i)).toBeTruthy();
+    });
   });
 });

@@ -250,6 +250,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [idleDelayMs, setIdleDelayMs] = useState<number>(2500);
   const [saveBanner, setSaveBanner] = useState<boolean>(false);
 
+  // Autostart (Launch at Login) cross-platform state
+  const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
+  const [isCheckingAutostart, setIsCheckingAutostart] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkAutostart = async () => {
+      try {
+        const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+        const enabled = await isEnabled();
+        if (isMounted) setAutostartEnabled(enabled);
+      } catch {
+        // Fallback for tests / non-tauri env
+      }
+    };
+    checkAutostart();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleToggleAutostart = async () => {
+    setIsCheckingAutostart(true);
+    try {
+      const { enable, disable, isEnabled } = await import("@tauri-apps/plugin-autostart");
+      const current = await isEnabled();
+      if (current) {
+        await disable();
+        setAutostartEnabled(false);
+      } else {
+        await enable();
+        setAutostartEnabled(true);
+      }
+    } catch (err) {
+      console.warn("Autostart error:", err);
+      setAutostartEnabled((prev) => !prev);
+    } finally {
+      setIsCheckingAutostart(false);
+    }
+  };
+
   useEffect(() => {
     if (config) {
       if (config.active_provider) {
@@ -1471,6 +1512,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {/* Tab 3: General Settings */}
           {activeTab === "general" && (
             <div className="space-y-4 max-w-3xl">
+              {/* Launch at Login (Mulai Otomatis saat Komputer Dinyalakan) */}
+              <div className="p-5 rounded-2xl bg-white/[0.025] space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[13px] font-medium text-white/85">Launch at Login (Mulai Otomatis)</div>
+                    <div className="text-[11px] text-white/40 mt-0.5">
+                      Jalankan FixIt secara otomatis di latar belakang saat komputer menyala (kompatibel macOS, Windows, & Linux).
+                    </div>
+                  </div>
+                  {/* Modern Toggle Switch */}
+                  <button
+                    type="button"
+                    onClick={handleToggleAutostart}
+                    disabled={isCheckingAutostart}
+                    className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer focus:outline-none shrink-0 ${
+                      autostartEnabled ? "bg-white/80" : "bg-white/10"
+                    }`}
+                    title={autostartEnabled ? "Nonaktifkan Launch at Login" : "Aktifkan Launch at Login"}
+                    aria-label="Toggle Launch at Login"
+                  >
+                    <span
+                      className={`block w-4 h-4 rounded-full bg-black transition-transform absolute top-1 ${
+                        autostartEnabled ? "left-7" : "left-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="text-[10.5px] font-mono text-white/35 flex items-center gap-1.5 pt-1 border-t border-white/[0.04]">
+                  <span className={`w-1.5 h-1.5 rounded-full ${autostartEnabled ? "bg-white/70" : "bg-white/20"}`}></span>
+                  <span>Status: {autostartEnabled ? "Aktif (Auto-start saat login sistem)" : "Nonaktif (Manual)"}</span>
+                </div>
+              </div>
+
+              {/* Sensitivitas & Idle Delay */}
               <div className="p-5 rounded-2xl bg-white/[0.025] space-y-3">
                 <div className="text-[13px] font-medium text-white/85">Sensitivitas & Idle Delay</div>
                 <div className="text-[11px] text-white/40">
@@ -1496,9 +1571,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div className="p-5 rounded-2xl bg-white/[0.025] space-y-2">
-                <div className="text-[13px] font-medium text-white/85">Perilaku Background macOS</div>
+                <div className="text-[13px] font-medium text-white/85">Perilaku Latar Belakang (Cross-Platform)</div>
                 <div className="text-[11px] text-white/40 leading-relaxed">
-                  Ketika tombol silang (X) ditekan, jendela FixIt disembunyikan ke menu bar tray dan pemantau kode tetap aktif tanpa memakan RAM besar (&lt;30MB).
+                  Ketika tombol silang (X) ditekan, jendela FixIt disembunyikan ke menu bar / system tray dan pemantau kode tetap aktif tanpa memakan RAM besar (&lt;30MB).
                 </div>
               </div>
             </div>

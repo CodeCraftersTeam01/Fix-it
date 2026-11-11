@@ -491,6 +491,10 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::start_dragging,
@@ -514,6 +518,7 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            let is_autostart = std::env::args().any(|arg| arg == "--autostart");
             #[cfg(target_os = "macos")]
             {
                 if let Some(win) = app.get_webview_window("main") {
@@ -523,6 +528,9 @@ pub fn run() {
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(32.0),
                     );
+                    if is_autostart {
+                        let _ = win.hide();
+                    }
                 }
                 if let Some(settings_win) = app.get_webview_window("settings") {
                     let _ = window_vibrancy::apply_vibrancy(
@@ -531,6 +539,14 @@ pub fn run() {
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(24.0),
                     );
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                if is_autostart {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.hide();
+                    }
                 }
             }
             let _ = setup_tray(app.handle());
