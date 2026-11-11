@@ -19,37 +19,16 @@ import {
 } from "lucide-react";
 import { AppSettings, AIProvider, ProviderModel, CustomProvider } from "./types";
 
-/* Official Brand Vector Logos for Providers */
-const GeminiLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
-  <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path
-      d="M14 0C14 7.732 7.732 14 0 14C7.732 14 14 20.268 14 28C14 20.268 20.268 14 28 14C20.268 14 14 7.732 14 0Z"
-      fill="currentColor"
-    />
-  </svg>
-);
-
-const GroqLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+/* Official Brand Vector Logos & Images for Providers */
+const OpenAILogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14.93c-2.48.47-4.73-.83-5.5-2.93H10v-2H5.06c.09-.69.28-1.37.58-2h4.36V8H6.55c1.19-2.34 3.73-3.69 6.45-3.08 2.61.59 4.54 2.8 4.78 5.48h2.02c-.34-3.8-3.07-6.9-6.8-7.38-4.32-.55-8.21 2.37-9.03 6.64-.17.88-.22 1.76-.15 2.62.29 3.51 2.57 6.49 5.86 7.47 3.32.99 6.96-.28 8.92-3.13l-1.6-1.22c-1.46 2.06-4.08 2.97-6.6 2.45z"/>
+    <path d="M22.282 9.821a6 6 0 0 0-.516-4.91a6.05 6.05 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a6 6 0 0 0-3.998 2.9a6.05 6.05 0 0 0 .743 7.097a5.98 5.98 0 0 0 .51 4.911a6.05 6.05 0 0 0 6.515 2.9A6 6 0 0 0 13.26 24a6.06 6.06 0 0 0 5.772-4.206a6 6 0 0 0 3.997-2.9a6.06 6.06 0 0 0-.747-7.073M13.26 22.43a4.48 4.48 0 0 1-2.876-1.04l.141-.081l4.779-2.758a.8.8 0 0 0 .392-.681v-6.737l2.02 1.168a.07.07 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494M3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085l4.783 2.759a.77.77 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646M2.34 7.896a4.5 4.5 0 0 1 2.366-1.973V11.6a.77.77 0 0 0 .388.677l5.815 3.354l-2.02 1.168a.08.08 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.08.08 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667m2.01-3.023l-.141-.085l-4.774-2.782a.78.78 0 0 0-.785 0L9.409 9.23V6.897a.07.07 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.8.8 0 0 0-.393.681zm1.097-2.365l2.602-1.5l2.607 1.5v2.999l-2.597 1.5l-2.607-1.5Z"/>
   </svg>
 );
 
 const OpenRouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.24L18.76 8 12 11.76 5.24 8 12 4.24zM4.8 8.91l6.4 3.56v7.12l-6.4-3.56V8.91zm14.4 7.12l-6.4 3.56v-7.12l6.4-3.56v7.12z"/>
-  </svg>
-);
-
-const OpenAILogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path d="M22.28 9.37a5.98 5.98 0 00-.51-4.89 6.07 6.07 0 00-6.47-2.83A6.06 6.06 0 0010.5 0a6.07 6.07 0 00-5.8 4.23 6.07 6.07 0 00-4.04 2.93 6.04 6.04 0 00.7 7.02 5.98 5.98 0 00.51 4.89 6.07 6.07 0 006.47 2.83A6.06 6.06 0 0013.5 24a6.07 6.07 0 005.8-4.23 6.07 6.07 0 004.04-2.93 6.04 6.04 0 00-.7-7.02zM13.5 22.45a4.53 4.53 0 01-3.18-1.32l.14-.08 5.25-3.03a.77.77 0 00.39-.67v-7.41l2.22 1.28v6.7a4.55 4.55 0 01-4.82 4.53zm-8.8-3.82a4.54 4.54 0 01-.6-3.4l.15.09 5.25 3.03a.77.77 0 00.78 0l6.42-3.7-2.22-1.28-6.42 3.7a.78.78 0 01-.78 0l-2.58-1.44zm-1.8-9.08a4.53 4.53 0 012.58-2.08v.17l5.25 3.03a.77.77 0 00.78 0l6.42-3.71v2.57l-6.42 3.7a.77.77 0 01-.78 0L4.9 9.55zm14.65 1.57l-6.42 3.7a.77.77 0 01-.78 0L9.73 13.4l2.22-1.28 6.42 3.7a.78.78 0 01.39.67v2.88l-2.22-1.28v-4.54zm2.55-2.07l-.15-.09-5.25-3.03a.77.77 0 00-.78 0L9.3 8.24l2.22 1.28 6.42-3.7a.77.77 0 01.78 0l2.58 1.49a4.54 4.54 0 01-1.2 3.74zM10.5 7.55l2.22-1.28 6.42 3.7-2.22 1.28-6.42-3.7z"/>
-  </svg>
-);
-
-const AnthropicLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path d="M17.47 3H14.1l-6.8 18h3.37l1.52-4.14h7.02L20.73 21H24L17.47 3zm-4.13 11.45l2.43-6.62 2.43 6.62h-4.86zM6.53 3H3.16L0 21h3.37l1.1-7.14h3.53L9.1 21h3.37L6.53 3z"/>
+    <path d="M16.778 1.844v1.919q-.569-.026-1.138-.032q-.708-.008-1.415.037c-1.93.126-4.023.728-6.149 2.237c-2.911 2.066-2.731 1.95-4.14 2.75c-.396.223-1.342.574-2.185.798c-.841.225-1.753.333-1.751.333v4.229s.768.108 1.61.333c.842.224 1.789.575 2.185.799c1.41.798 1.228.683 4.14 2.75c2.126 1.509 4.22 2.11 6.148 2.236c.88.058 1.716.041 2.555.005v1.918l7.222-4.168l-7.222-4.17v2.176c-.86.038-1.611.065-2.278.021c-1.364-.09-2.417-.357-3.979-1.465c-2.244-1.593-2.866-2.027-3.68-2.508c.889-.518 1.449-.906 3.822-2.59c1.56-1.109 2.614-1.377 3.978-1.466c.667-.044 1.418-.017 2.278.02v2.176L24 6.014Z"/>
   </svg>
 );
 
@@ -68,12 +47,6 @@ const AgnesLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) 
   </svg>
 );
 
-const DeepSeekLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3.87 13.9a5.52 5.52 0 0 1-3.87 1.55 5.45 5.45 0 0 1-5.45-5.45c0-3.01 2.44-5.45 5.45-5.45 1.51 0 2.88.62 3.87 1.62l-1.38 1.38a3.5 3.5 0 0 0-2.49-1.05 3.5 3.5 0 0 0-3.5 3.5 3.5 3.5 0 0 0 3.5 3.5c.97 0 1.84-.39 2.49-1.03l1.38 1.38z" />
-  </svg>
-);
-
 const RouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <rect x="2" y="14" width="20" height="8" rx="2" />
@@ -83,12 +56,24 @@ const RouterLogo: React.FC<{ className?: string }> = ({ className = "w-4 h-4" })
 );
 
 const renderProviderLogo = (provider: AIProvider, className: string = "w-4 h-4") => {
-  if (provider.id === "deepseek") return <DeepSeekLogo className={className} />;
-  if (provider.id === "gemini") return <GeminiLogo className={className} />;
-  if (provider.id === "groq") return <GroqLogo className={className} />;
-  if (provider.id === "openrouter") return <OpenRouterLogo className={className} />;
-  if (provider.id === "claude" || provider.protocol === "anthropic") return <AnthropicLogo className={className} />;
-  if (provider.id === "openai") return <OpenAILogo className={className} />;
+  if (provider.id === "claude" || provider.protocol === "anthropic") {
+    return <img src="/providers/claude.png" alt="Claude" className={`${className} object-contain`} />;
+  }
+  if (provider.id === "gemini") {
+    return <img src="/providers/gemini.png" alt="Gemini" className={`${className} object-contain`} />;
+  }
+  if (provider.id === "deepseek") {
+    return <img src="/providers/deepseek.png" alt="DeepSeek" className={`${className} object-contain`} />;
+  }
+  if (provider.id === "groq") {
+    return <img src="/providers/groq.png" alt="Groq" className={`${className} object-contain rounded-full`} />;
+  }
+  if (provider.id === "openrouter") {
+    return <OpenRouterLogo className={className} />;
+  }
+  if (provider.id === "openai") {
+    return <OpenAILogo className={className} />;
+  }
   if (provider.id === "opencode") return <OpenCodeLogo className={className} />;
   if (provider.id === "agnes") return <AgnesLogo className={className} />;
   if (provider.id === "larprouter") return <RouterLogo className={className} />;
