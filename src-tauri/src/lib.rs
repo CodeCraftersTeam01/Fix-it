@@ -260,6 +260,96 @@ pub mod commands {
 
         Ok(content)
     }
+
+    #[tauri::command]
+    pub async fn ping_provider(
+        base_url: String,
+        api_key: Option<String>,
+        protocol: Option<String>,
+        _model_id: Option<String>,
+    ) -> Result<u64, String> {
+        let trimmed_url = base_url.trim().trim_end_matches('/');
+        if trimmed_url.is_empty() {
+            return Err("Base URL kosong".to_string());
+        }
+
+        let proto = protocol.unwrap_or_else(|| "openai".to_string()).to_lowercase();
+        let key = api_key.unwrap_or_default().trim().to_string();
+
+        if key.is_empty() {
+            return Err("API Key belum diisi".to_string());
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(6))
+            .build()
+            .map_err(|e| format!("Client error: {}", e))?;
+
+        let start = std::time::Instant::now();
+
+        let resp = if proto == "anthropic" {
+            let endpoint = if trimmed_url.ends_with("/models") {
+                trimmed_url.to_string()
+            } else {
+                format!("{}/models", trimmed_url)
+            };
+            client
+                .get(&endpoint)
+                .header("x-api-key", &key)
+                .header("anthropic-version", "2023-06-01")
+                .send()
+                .await
+        } else if proto == "gemini" {
+            let endpoint = if trimmed_url.ends_with("/models") {
+                format!("{}?key={}", trimmed_url, key)
+            } else {
+                format!("{}/models?key={}", trimmed_url, key)
+            };
+            client
+                .get(&endpoint)
+                .send()
+                .await
+        } else {
+            // OpenAI compatible
+            let endpoint = if trimmed_url.ends_with("/models") {
+                trimmed_url.to_string()
+            } else {
+                format!("{}/models", trimmed_url)
+            };
+            client
+                .get(&endpoint)
+                .header("Authorization", format!("Bearer {}", key))
+                .send()
+                .await
+        };
+
+        let response = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                if e.is_timeout() {
+                    return Err("Timeout (6s)".to_string());
+                }
+                return Err(format!("Network Error: {}", e));
+            }
+        };
+
+        let status = response.status();
+        let elapsed = start.elapsed().as_millis() as u64;
+
+        if status.is_success() {
+            Ok(elapsed)
+        } else if status.as_u16() == 401 {
+            Err("401 (Invalid Key)".to_string())
+        } else if status.as_u16() == 403 {
+            Err("403 (Akses Ditolak)".to_string())
+        } else if status.as_u16() == 404 {
+            Err("404 (Not Found)".to_string())
+        } else if status.as_u16() == 429 {
+            Err("429 (Rate Limit / Quota Habis)".to_string())
+        } else {
+            Err(format!("HTTP {} Error", status.as_u16()))
+        }
+    }
 }
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -508,7 +598,8 @@ pub fn run() {
             commands::ask_followup,
             commands::discover_ide_workspaces,
             commands::fetch_models_from_provider,
-            commands::toggle_hud_expand
+            commands::toggle_hud_expand,
+            commands::ping_provider
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

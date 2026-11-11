@@ -172,4 +172,19 @@ describe("SettingsView", () => {
       expect(screen.getByText(/Aktif \(Auto-start saat login sistem\)/i)).toBeTruthy();
     });
   });
+
+  it("handles ping error gracefully when key is empty or invalid", async () => {
+    render(<SettingsView />);
+    const providerCards = screen.getAllByText("OpenAI");
+    fireEvent.click(providerCards[providerCards.length - 1]);
+
+    const pingButtons = screen.getAllByText("PING");
+    expect(pingButtons.length).toBeGreaterThan(0);
+    fireEvent.click(pingButtons[0]);
+
+    await waitFor(() => {
+      const status = screen.queryByText(/Key belum diisi|401|Gagal/i);
+      expect(status).toBeTruthy();
+    });
+  });
 });

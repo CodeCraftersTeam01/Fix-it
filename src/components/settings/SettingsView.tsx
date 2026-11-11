@@ -516,19 +516,126 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  // Ping Test
-  const handleTestPing = (targetId: string) => {
-    setTestStatus((prev) => ({ ...prev, [targetId]: "testing" }));
-    setTimeout(() => {
-      setTestStatus((prev) => ({ ...prev, [targetId]: "ok (21ms)" }));
+  // Render Test Status Badge
+  const renderTestStatusBadge = (status?: string) => {
+    if (!status) return null;
+    const isOk = status.startsWith("ok");
+    const isTesting = status.includes("testing");
+    const colorClass = isOk
+      ? "text-emerald-400 font-medium"
+      : isTesting
+      ? "text-white/50 animate-pulse"
+      : "text-red-400 font-medium";
+
+    return <span className={`font-mono text-[10px] ${colorClass}`}>{status}</span>;
+  };
+
+  // Real backend ping execution with latency & error mapping
+  const executePing = async (
+    targetKey: string,
+    baseUrl: string,
+    apiKey: string,
+    protocol?: string,
+    modelId?: string
+  ) => {
+    if (!apiKey || !apiKey.trim()) {
+      setTestStatus((prev) => ({ ...prev, [targetKey]: "API Key belum diisi" }));
       setTimeout(() => {
         setTestStatus((prev) => {
           const next = { ...prev };
-          delete next[targetId];
+          delete next[targetKey];
           return next;
         });
-      }, 2500);
-    }, 450);
+      }, 4000);
+      return;
+    }
+
+    setTestStatus((prev) => ({ ...prev, [targetKey]: "testing..." }));
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const latencyMs = await invoke<number>("ping_provider", {
+        baseUrl,
+        apiKey: apiKey.trim(),
+        protocol: protocol || "openai",
+        modelId: modelId || null,
+      });
+      setTestStatus((prev) => ({ ...prev, [targetKey]: `ok (${latencyMs}ms)` }));
+    } catch (err: unknown) {
+      console.warn("Ping failed:", err);
+      let msg =
+        typeof err === "string"
+          ? err
+          : err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Gagal terhubung";
+      if (msg.includes("reading 'invoke'") || msg.includes("invoke")) {
+        msg = "Gagal (Backend offline)";
+      }
+      setTestStatus((prev) => ({ ...prev, [targetKey]: msg }));
+    } finally {
+      setTimeout(() => {
+        setTestStatus((prev) => {
+          const next = { ...prev };
+          delete next[targetKey];
+          return next;
+        });
+      }, 5000);
+    }
+  };
+
+  // Ping Test (Real HTTP network call to provider endpoint)
+  const handleTestPing = async (targetId: string) => {
+    if (targetId === "all-defaults") {
+      defaultProvidersList.forEach((dp) => {
+        const key = dp.api_keys[0];
+        if (key && key.trim()) {
+          executePing(dp.id, dp.base_url, key, dp.protocol);
+        } else {
+          setTestStatus((prev) => ({ ...prev, [dp.id]: "Offline (No key)" }));
+          setTimeout(() => {
+            setTestStatus((prev) => {
+              const next = { ...prev };
+              delete next[dp.id];
+              return next;
+            });
+          }, 3500);
+        }
+      });
+      return;
+    }
+
+    if (targetId === "keys") {
+      if (!selectedProvider || selectedProvider.api_keys.length === 0) {
+        setTestStatus((prev) => ({ ...prev, keys: "Belum ada key" }));
+        setTimeout(() => {
+          setTestStatus((prev) => {
+            const next = { ...prev };
+            delete next.keys;
+            return next;
+          });
+        }, 3500);
+        return;
+      }
+      selectedProvider.api_keys.forEach((k, idx) => {
+        executePing(`key-${idx}`, selectedProvider.base_url, k, selectedProvider.protocol);
+      });
+      return;
+    }
+
+    if (targetId.startsWith("key-")) {
+      const idx = parseInt(targetId.replace("key-", ""), 10);
+      const key = selectedProvider?.api_keys[idx];
+      if (selectedProvider) {
+        executePing(targetId, selectedProvider.base_url, key || "", selectedProvider.protocol);
+      }
+      return;
+    }
+
+    // Model ping (m.id)
+    if (selectedProvider) {
+      const activeKey = selectedProvider.api_keys[0] || "";
+      executePing(targetId, selectedProvider.base_url, activeKey, selectedProvider.protocol, targetId);
+    }
   };
 
   // Copy Endpoint URL
@@ -999,7 +1106,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             {/* Baris Bawah: Status Koneksi & Model Info */}
                             <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono gap-2">
                               <div className="flex items-center gap-1.5 shrink-0">
-                                {hasConnection ? (
+                                {testStatus[cp.id] ? (
+                                  renderTestStatusBadge(testStatus[cp.id])
+                                ) : hasConnection ? (
                                   <>
                                     <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                                     <span className="text-white/60">
@@ -1088,7 +1197,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                             <div className="pt-2 border-t border-white/[0.03] flex items-center justify-between text-[10px] font-mono gap-2">
                               <div className="flex items-center gap-1.5 shrink-0">
-                                {hasConnection ? (
+                                {testStatus[dp.id] ? (
+                                  renderTestStatusBadge(testStatus[dp.id])
+                                ) : hasConnection ? (
                                   <>
                                     <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
                                     <span className="text-white/55">
@@ -1252,7 +1363,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             onClick={() => handleTestPing("keys")}
                             className="hover:text-white transition flex items-center gap-1 cursor-pointer"
                           >
-                            <RefreshCw size={11} /> TEST CONNECTION
+                            <RefreshCw size={11} className={testStatus["keys"]?.includes("testing") ? "animate-spin" : ""} /> TEST CONNECTION
                           </button>
                         </div>
                       </div>
@@ -1272,9 +1383,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </span>
                             </div>
                             <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
-                              {testStatus[`key-${idx}`] && (
-                                <span className="text-white/70">{testStatus[`key-${idx}`]}</span>
-                              )}
+                              {renderTestStatusBadge(testStatus[`key-${idx}`])}
                               <button
                                 onClick={() => handleTestPing(`key-${idx}`)}
                                 className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-white/70 cursor-pointer"
@@ -1391,9 +1500,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </div>
 
                               <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
-                                {testStatus[m.id] && (
-                                  <span className="text-white/70 mr-1">{testStatus[m.id]}</span>
-                                )}
+                                {renderTestStatusBadge(testStatus[m.id])}
                                 <button
                                   onClick={() => handleApplyModel(m.id)}
                                   className={`px-2 py-1 rounded-lg transition cursor-pointer ${
