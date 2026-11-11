@@ -58,6 +58,24 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn toggle_hud_expand(window: Window) -> Result<bool, String> {
+        let size = window.inner_size().map_err(|e| e.to_string())?;
+        let scale_factor = window.scale_factor().unwrap_or(1.0);
+        let logical_w = size.width as f64 / scale_factor;
+
+        let (new_w, new_h, is_expanded) = if logical_w > 450.0 {
+            (380.0, 640.0, false)
+        } else {
+            (540.0, 740.0, true)
+        };
+
+        window
+            .set_size(tauri::LogicalSize::new(new_w, new_h))
+            .map_err(|e| e.to_string())?;
+        Ok(is_expanded)
+    }
+
+    #[tauri::command]
     pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
         if let Some(window) = app.get_webview_window("settings") {
             window.show().map_err(|e| e.to_string())?;
@@ -485,7 +503,8 @@ pub fn run() {
             commands::analyze_code_error,
             commands::ask_followup,
             commands::discover_ide_workspaces,
-            commands::fetch_models_from_provider
+            commands::fetch_models_from_provider,
+            commands::toggle_hud_expand
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

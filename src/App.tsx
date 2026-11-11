@@ -118,21 +118,27 @@ export function App() {
 
   const handleExpand = async () => {
     try {
-      const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
-      const appWindow = getCurrentWindow();
-      const size = await appWindow.innerSize();
-      const scaleFactor = await appWindow.scaleFactor();
-      const logicalWidth = size.width / scaleFactor;
-
-      if (logicalWidth > 450) {
-        await appWindow.setSize(new LogicalSize(380, 640));
-        setIsExpanded(false);
-      } else {
-        await appWindow.setSize(new LogicalSize(540, 740));
-        setIsExpanded(true);
-      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      const expanded = await invoke<boolean>("toggle_hud_expand");
+      setIsExpanded(expanded);
     } catch {
-      setIsExpanded((prev) => !prev);
+      try {
+        const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+        const size = await appWindow.innerSize();
+        const scaleFactor = await appWindow.scaleFactor();
+        const logicalWidth = size.width / scaleFactor;
+
+        if (logicalWidth > 450) {
+          await appWindow.setSize(new LogicalSize(380, 640));
+          setIsExpanded(false);
+        } else {
+          await appWindow.setSize(new LogicalSize(540, 740));
+          setIsExpanded(true);
+        }
+      } catch {
+        setIsExpanded((prev) => !prev);
+      }
     }
   };
 
