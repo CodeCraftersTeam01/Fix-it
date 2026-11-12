@@ -23,23 +23,8 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "shadow": true,
+        "shadow": false,
         "visible": true
-      },
-      {
-        "label": "settings",
-        "title": "FixIt Settings",
-        "url": "index.html#settings",
-        "width": 980,
-        "height": 680,
-        "minWidth": 820,
-        "minHeight": 540,
-        "resizable": true,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "shadow": true,
-        "visible": false
       }
     ],
     "security": {
@@ -55,6 +40,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
   }
 }

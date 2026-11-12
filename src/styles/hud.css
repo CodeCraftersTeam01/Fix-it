@@ -20,15 +20,16 @@
   }
 }
 
-/* Apple Siri / macOS Pure Pitch Dark Glass HUD (Zero Slop) */
+/* Apple Siri / macOS Pure Pitch Dark Glass HUD (Low Power & Zero Slop Optimized) */
 .apple-hud-glass {
-  background: rgba(4, 4, 6, 0.90);
-  backdrop-filter: blur(60px) saturate(220%);
-  -webkit-backdrop-filter: blur(60px) saturate(220%);
+  background: rgba(10, 10, 14, 0.92);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   /* Pure inset reflection rim - NO outer shadow so no black square corner artifacts! */
   box-shadow: inset 0 0.5px 0.5px 0 rgba(255, 255, 255, 0.16),
               inset 0 -0.5px 0.5px 0 rgba(255, 255, 255, 0.04);
+  transform: translateZ(0);
 }
 
 .apple-pill-btn {
@@ -93,30 +94,31 @@
   animation: text-shine 2.2s linear infinite;
 }
 
-/* Motion-blur text reveal animation per word */
+/* Motion text reveal animation per word - lightweight for low power mode */
 @keyframes word-blur-reveal {
   0% {
     opacity: 0;
-    filter: blur(8px);
-    transform: translateY(5px) scale(0.97);
-  }
-  65% {
-    opacity: 0.9;
-    filter: blur(1.5px);
-    transform: translateY(-0.5px) scale(1.005);
+    transform: translateY(3px);
   }
   100% {
     opacity: 1;
-    filter: blur(0px);
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 .animate-word-blur {
   display: inline-block;
-  will-change: opacity, filter, transform;
-  animation: word-blur-reveal 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: word-blur-reveal 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
   overflow-wrap: anywhere;
   word-break: break-word;
   max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-word-blur,
+  .animate-text-shine {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

@@ -1,19 +1,19 @@
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct SmartIdleWatcher {
     idle_delay: Duration,
-    last_event_time: Arc<Mutex<Option<(PathBuf, Instant)>>>,
+    state: Arc<(Mutex<Option<(PathBuf, Instant)>>, Condvar)>,
 }
 
 impl SmartIdleWatcher {
     pub fn new(idle_delay_ms: u64) -> Self {
         Self {
             idle_delay: Duration::from_millis(idle_delay_ms),
-            last_event_time: Arc::new(Mutex::new(None)),
+            state: Arc::new((Mutex::new(None), Condvar::new())),
         }
     }
 
@@ -40,7 +40,7 @@ impl SmartIdleWatcher {
             }
         }
 
-        let state = Arc::clone(&self.last_event_time);
+        let state = Arc::clone(&self.state);
         let idle_delay = self.idle_delay;
         let writing_cb = Arc::new(on_writing);
         let idle_cb = Arc::new(on_idle_detected);
@@ -83,8 +83,9 @@ impl SmartIdleWatcher {
                             continue;
                         }
 
-                        if let Ok(mut lock) = state.lock() {
+                        if let Ok(mut lock) = state.0.lock() {
                             *lock = Some((path.clone(), Instant::now()));
+                            state.1.notify_one();
                         }
 
                         // Immediately notify that student is writing to this file
@@ -94,32 +95,45 @@ impl SmartIdleWatcher {
             }
         });
 
-        // Dedicated ticker thread checking for the quiet "idle" window after typing stops
-        let state_checker = Arc::clone(&self.last_event_time);
+        // Dedicated event-driven waiter thread checking for the quiet "idle" window after typing stops
+        // Uses Condvar to achieve zero CPU wakeups and deep sleep when no typing is occurring
+        let state_checker = Arc::clone(&self.state);
         std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_millis(250));
-                let to_notify = {
-                    if let Ok(mut lock) = state_checker.lock() {
-                        if let Some((path, recorded_at)) = lock.take() {
-                            if recorded_at.elapsed() >= idle_delay {
-                                // Idle window achieved! Student stopped typing for idle_delay.
-                                Some(path)
-                            } else {
-                                // Debounce not elapsed yet, put it back
-                                *lock = Some((path, recorded_at));
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                };
+            let (lock, cvar) = &*state_checker;
+            let mut current = match lock.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
 
-                if let Some(path) = to_notify {
-                    idle_cb(path);
+            loop {
+                match current.take() {
+                    None => {
+                        // Deep sleep - zero CPU ticking while user is idle or in background
+                        current = match cvar.wait(current) {
+                            Ok(g) => g,
+                            Err(p) => p.into_inner(),
+                        };
+                    }
+                    Some((path, recorded_at)) => {
+                        let elapsed = recorded_at.elapsed();
+                        if elapsed >= idle_delay {
+                            // Idle window achieved! Student stopped typing for idle_delay.
+                            drop(current);
+                            idle_cb(path);
+                            current = match lock.lock() {
+                                Ok(g) => g,
+                                Err(p) => p.into_inner(),
+                            };
+                        } else {
+                            let remaining = idle_delay - elapsed;
+                            *current = Some((path, recorded_at));
+                            let (guard, _) = match cvar.wait_timeout(current, remaining) {
+                                Ok(res) => res,
+                                Err(p) => p.into_inner(),
+                            };
+                            current = guard;
+                        }
+                    }
                 }
             }
         });

@@ -235,6 +235,35 @@ pub mod commands {
         if let Some(window) = app.get_webview_window("settings") {
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
+        } else {
+            let builder = tauri::WebviewWindowBuilder::new(
+                &app,
+                "settings",
+                tauri::WebviewUrl::App("index.html#settings".into()),
+            )
+            .title("FixIt Settings")
+            .inner_size(980.0, 680.0)
+            .min_inner_size(820.0, 540.0)
+            .resizable(true)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .shadow(false);
+
+            let win = builder.build().map_err(|e| e.to_string())?;
+
+            #[cfg(target_os = "macos")]
+            {
+                let _ = window_vibrancy::apply_vibrancy(
+                    &win,
+                    window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                    Some(window_vibrancy::NSVisualEffectState::Active),
+                    Some(24.0),
+                );
+            }
+
+            win.show().map_err(|e| e.to_string())?;
+            win.set_focus().map_err(|e| e.to_string())?;
         }
         Ok(())
     }
@@ -564,10 +593,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "settings" => {
                     let _ = app.emit("open-settings", ());
-                    if let Some(win) = app.get_webview_window("settings") {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
+                    let app_handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = commands::open_settings_window(app_handle).await;
+                    });
                 }
                 "hide" => {
                     if let Some(win) = app.get_webview_window("main") {
@@ -608,29 +637,46 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+static IDE_CACHE: std::sync::Mutex<Option<(String, std::time::Instant)>> = std::sync::Mutex::new(None);
+
 fn detect_active_ide() -> String {
-    let output = std::process::Command::new("ps")
-        .args(["-ax", "-o", "comm="])
-        .output();
-    if let Ok(out) = output {
-        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
-        if text.contains("antigravity ide") {
-            return "Antigravity IDE".to_string();
-        }
-        if text.contains("cursor") {
-            return "Cursor".to_string();
-        }
-        if text.contains("windsurf") {
-            return "Windsurf".to_string();
-        }
-        if text.contains("kiro") {
-            return "Kiro".to_string();
-        }
-        if text.contains("code") {
-            return "VS Code".to_string();
+    if let Ok(cache) = IDE_CACHE.lock() {
+        if let Some((ref ide, instant)) = *cache {
+            if instant.elapsed() < std::time::Duration::from_secs(30) {
+                return ide.clone();
+            }
         }
     }
-    "Antigravity / VS Code".to_string()
+
+    let detected = {
+        let output = std::process::Command::new("ps")
+            .args(["-ax", "-o", "comm="])
+            .output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            if text.contains("antigravity ide") {
+                "Antigravity IDE".to_string()
+            } else if text.contains("cursor") {
+                "Cursor".to_string()
+            } else if text.contains("windsurf") {
+                "Windsurf".to_string()
+            } else if text.contains("kiro") {
+                "Kiro".to_string()
+            } else if text.contains("code") {
+                "VS Code".to_string()
+            } else {
+                "Antigravity / VS Code".to_string()
+            }
+        } else {
+            "Antigravity / VS Code".to_string()
+        }
+    };
+
+    if let Ok(mut cache) = IDE_CACHE.lock() {
+        *cache = Some((detected.clone(), std::time::Instant::now()));
+    }
+
+    detected
 }
 
 #[derive(Clone)]
@@ -1012,14 +1058,7 @@ pub fn run() {
                         let _ = win.hide();
                     }
                 }
-                if let Some(settings_win) = app.get_webview_window("settings") {
-                    let _ = window_vibrancy::apply_vibrancy(
-                        &settings_win,
-                        window_vibrancy::NSVisualEffectMaterial::HudWindow,
-                        Some(window_vibrancy::NSVisualEffectState::Active),
-                        Some(24.0),
-                    );
-                }
+
             }
             #[cfg(not(target_os = "macos"))]
             {
