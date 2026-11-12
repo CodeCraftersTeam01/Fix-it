@@ -161,7 +161,9 @@ export function App() {
           } catch {}
         });
         await listen("fixit-reset-standby", () => {
-          handleClearError();
+          // Pure local state reset - DO NOT re-invoke backend to avoid recursive event storm
+          setActiveErrors([]);
+          setSelectedErrorIndex(0);
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
         });
@@ -194,13 +196,15 @@ export function App() {
 
   const handleClose = async () => {
     // Reset status error & analisa ke mode standby saat pop-up ditutup / disilang
-    await handleClearError();
+    setActiveErrors([]);
+    setSelectedErrorIndex(0);
     setIsAnalyzing(false);
     setAnalyzingInfo(null);
 
     try {
       const invoke = await getInvoke();
       if (invoke) {
+        await invoke("clear_active_error", { filePath: null });
         await invoke("hide_window");
         return;
       }
@@ -330,8 +334,10 @@ export function App() {
     setActiveErrors([]);
     setSelectedErrorIndex(0);
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("clear_active_error", { filePath: null });
+      const invoke = await getInvoke();
+      if (invoke) {
+        await invoke("clear_active_error", { filePath: null });
+      }
     } catch {}
   };
 

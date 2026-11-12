@@ -208,7 +208,6 @@ pub mod commands {
 
     #[tauri::command]
     pub async fn hide_window(window: Window) -> Result<(), String> {
-        let _ = window.emit("fixit-reset-standby", ());
         window.hide().map_err(|e| e.to_string())
     }
 
@@ -551,7 +550,6 @@ pub mod commands {
             );
         } else {
             state.clear_all_errors().await;
-            let _ = app.emit("fixit-reset-standby", ());
         }
 
         let sync_errors = state.get_all_active_errors().await;
@@ -588,6 +586,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 "show" => {
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.show();
+                        let _ = win.unminimize();
                         let _ = win.set_focus();
                     }
                 }
@@ -627,6 +626,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let _ = win.hide();
                     } else {
                         let _ = win.show();
+                        let _ = win.unminimize();
                         let _ = win.set_focus();
                     }
                 }
