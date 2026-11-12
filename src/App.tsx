@@ -4,6 +4,19 @@ import { SettingsView } from "./components/settings/SettingsView";
 import { AppSettings } from "./components/settings/types";
 import { CodeError, FixExplanation, ChatMessage, FileActivity, ActiveErrorItem } from "./types";
 
+let cachedInvoke: typeof import("@tauri-apps/api/core").invoke | null = null;
+const getInvoke = async () => {
+  if (!cachedInvoke) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      cachedInvoke = invoke;
+    } catch {
+      // Browser fallback
+    }
+  }
+  return cachedInvoke;
+};
+
 export function App() {
   const isSettingsRoute = typeof window !== "undefined" && window.location.hash === "#settings";
   const [activeErrors, setActiveErrors] = useState<ActiveErrorItem[]>([]);
@@ -186,8 +199,12 @@ export function App() {
     setAnalyzingInfo(null);
 
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("hide_window");
+      const invoke = await getInvoke();
+      if (invoke) {
+        await invoke("hide_window");
+        return;
+      }
+      throw new Error("No invoke");
     } catch {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -201,8 +218,12 @@ export function App() {
 
   const handleOpenSettings = async () => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("open_settings_window");
+      const invoke = await getInvoke();
+      if (invoke) {
+        await invoke("open_settings_window");
+        return;
+      }
+      throw new Error("No invoke");
     } catch {
       console.log("Open settings window via Tauri fallback");
     }
@@ -210,9 +231,13 @@ export function App() {
 
   const handleExpand = async () => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const expanded = await invoke<boolean>("toggle_hud_expand");
-      setIsExpanded(expanded);
+      const invoke = await getInvoke();
+      if (invoke) {
+        const expanded = await invoke<boolean>("toggle_hud_expand");
+        setIsExpanded(expanded);
+        return;
+      }
+      throw new Error("No invoke");
     } catch {
       try {
         const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
