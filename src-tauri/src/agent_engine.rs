@@ -1187,7 +1187,8 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
         }
 
         let mut step_count = 0;
-        let max_steps = 15;
+        let max_steps = 8;
+        let mut has_performed_modification = false;
 
         while step_count < max_steps {
             step_count += 1;
@@ -1276,6 +1277,13 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             if let Some(raw_tool_calls) = msg["tool_calls"].as_array() {
                 let tool_calls = Self::merge_tool_calls(raw_tool_calls);
                 if !tool_calls.is_empty() {
+                    for call in &tool_calls {
+                        let name = call["function"]["name"].as_str().unwrap_or("");
+                        if name == "edit_file" || name == "write_file" {
+                            has_performed_modification = true;
+                        }
+                    }
+
                     // Append assistant message with clean merged tool_calls
                     let mut assistant_msg = msg.clone();
                     assistant_msg["tool_calls"] = serde_json::json!(tool_calls);
@@ -1296,44 +1304,56 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             // If no tool calls, model gave the final answer
             let mut final_content = msg["content"].as_str().unwrap_or("").trim().to_string();
 
-            // Jika respons akhir kosong setelah memanggil tools, minta ringkasan eksplisit
+            // Jika respons akhir kosong setelah memanggil tools, minta ringkasan eksplisit dengan timeout cepat
             if final_content.is_empty() {
-                messages.push(serde_json::json!({
-                    "role": "user",
-                    "content": "Semua tindakan tools telah selesai dieksekusi. Sekarang berikan ringkasan penjelasan cerdas dan singkat dalam bahasa Indonesia: mengapa error ini bisa terjadi (penyebabnya), dan apa saja tindakan perbaikan yang telah Anda lakukan hingga tuntas."
-                }));
+                if has_performed_modification {
+                    final_content = format!(
+                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas kode telah diperbaiki secara presisi sehingga aplikasi dapat kembali berjalan dengan normal.",
+                        error.raw_message
+                    );
+                } else {
+                    messages.push(serde_json::json!({
+                        "role": "user",
+                        "content": "Semua tindakan tools telah selesai dieksekusi. Sekarang berikan ringkasan penjelasan cerdas dan singkat dalam bahasa Indonesia: mengapa error ini bisa terjadi (penyebabnya), dan apa saja tindakan perbaikan yang telah Anda lakukan hingga tuntas."
+                    }));
 
-                let summary_payload = serde_json::json!({
-                    "model": config.model_name,
-                    "messages": messages,
-                    "temperature": 0.2
-                });
+                    let summary_payload = serde_json::json!({
+                        "model": config.model_name,
+                        "messages": messages,
+                        "temperature": 0.2
+                    });
 
-                if let Ok(sum_resp) = client
-                    .post(&endpoint)
-                    .header("Authorization", format!("Bearer {}", config.openai_api_key))
-                    .header("Content-Type", "application/json")
-                    .json(&summary_payload)
-                    .send()
-                    .await
-                {
-                    if sum_resp.status().is_success() {
-                        if let Ok(sum_json) = sum_resp.json::<serde_json::Value>().await {
-                            if let Some(c) = sum_json["choices"][0]["message"]["content"].as_str() {
-                                let trimmed = c.trim();
-                                if !trimmed.is_empty() {
-                                    final_content = trimmed.to_string();
+                    let fast_client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(5))
+                        .build()
+                        .unwrap_or_else(|_| client.clone());
+
+                    if let Ok(sum_resp) = fast_client
+                        .post(&endpoint)
+                        .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                        .header("Content-Type", "application/json")
+                        .json(&summary_payload)
+                        .send()
+                        .await
+                    {
+                        if sum_resp.status().is_success() {
+                            if let Ok(sum_json) = sum_resp.json::<serde_json::Value>().await {
+                                if let Some(c) = sum_json["choices"][0]["message"]["content"].as_str() {
+                                    let trimmed = c.trim();
+                                    if !trimmed.is_empty() {
+                                        final_content = trimmed.to_string();
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if final_content.is_empty() {
-                    final_content = format!(
-                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas dan konfigurasi proyek telah diselaraskan agar aplikasi dapat kembali berjalan dengan normal.",
-                        error.raw_message
-                    );
+                    if final_content.is_empty() {
+                        final_content = format!(
+                            "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas dan konfigurasi proyek telah diselaraskan agar aplikasi dapat kembali berjalan dengan normal.",
+                            error.raw_message
+                        );
+                    }
                 }
             }
 

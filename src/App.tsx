@@ -66,6 +66,9 @@ export function App() {
       );
       if (remaining.length === 0) {
         setSelectedErrorIndex(0);
+        setAgentSteps([]);
+        setMessages([]);
+        setIsAgentRunning(false);
       } else {
         setSelectedErrorIndex((curr) =>
           Math.min(curr, Math.max(0, remaining.length - 1))
@@ -98,6 +101,10 @@ export function App() {
           (event) => {
             setIsAnalyzing(true);
             setAnalyzingInfo(event.payload);
+            // Bersihkan riwayat steps dan pesan perbaikan dari error sebelumnya
+            setAgentSteps([]);
+            setMessages([]);
+            setIsAgentRunning(false);
           }
         );
         await listen<{
@@ -110,11 +117,17 @@ export function App() {
           setAnalyzingInfo(null);
           const payload = event.payload;
 
+          // Bersihkan riwayat perbaikan lama agar sesi error baru bersih & fresh
+          setAgentSteps([]);
+          setMessages([]);
+          setIsAgentRunning(false);
+
           setActiveErrors((prev) => {
             const idx = prev.findIndex((item) =>
               pathMatches(item.error.file_path, payload.error.file_path)
             );
             if (idx >= 0) {
+              setSelectedErrorIndex(idx);
               const updated = [...prev];
               updated[idx] = {
                 ...updated[idx],
@@ -178,6 +191,9 @@ export function App() {
         });
         await listen<AgentStep>("fixit-agent-step", (event) => {
           setAgentSteps((prev) => [...prev, event.payload]);
+          if (event.payload.step_type === "finish") {
+            setIsAgentRunning(false);
+          }
         });
         await listen("fixit-reset-standby", () => {
           // Pure local state reset - DO NOT re-invoke backend to avoid recursive event storm
@@ -186,6 +202,7 @@ export function App() {
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
           setAgentSteps([]);
+          setMessages([]);
           setIsAgentRunning(false);
         });
       } catch {
@@ -355,6 +372,7 @@ export function App() {
     setActiveErrors([]);
     setSelectedErrorIndex(0);
     setAgentSteps([]);
+    setMessages([]);
     setIsAgentRunning(false);
     try {
       const invoke = await getInvoke();

@@ -648,8 +648,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {/* Status Agent: Working saat ada aksi/tool call, Thinking saat analisis awal (tanpa spinner berputar) */}
-            {isAgentRunning && (
+            {/* Status Agent: Working saat ada aksi/tool call, Thinking saat analisis awal (hilang seketika setelah task finish) */}
+            {isAgentRunning && !finishStep && (
               <div className="pt-2 pb-1 text-[12.5px] font-mono select-none">
                 <span className="text-white/50 font-medium tracking-tight animate-text-shine">
                   {parsedSteps.length > 0 ? "Working" : "Thinking"}
