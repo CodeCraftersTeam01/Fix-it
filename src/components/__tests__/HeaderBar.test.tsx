@@ -23,4 +23,12 @@ describe("HeaderBar", () => {
     fireEvent.click(expandBtn);
     expect(handleExpand).toHaveBeenCalledTimes(1);
   });
+
+  it("calls onCapture when capture button clicked", () => {
+    const handleCapture = vi.fn();
+    render(<HeaderBar onCapture={handleCapture} />);
+    const captureBtn = screen.getByLabelText("Capture Screen");
+    fireEvent.click(captureBtn);
+    expect(handleCapture).toHaveBeenCalledTimes(1);
+  });
 });

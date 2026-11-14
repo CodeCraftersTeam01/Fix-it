@@ -24,6 +24,8 @@ regex = "1.10"
 dirs = "5.0"
 window-vibrancy = "0.8.1"
 tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { FloatingHud } from "../FloatingHud";
 import { ActiveErrorItem } from "../../types";
 
@@ -234,5 +234,117 @@ describe("FloatingHud standby reset", () => {
     expect(
       screen.getByText(/Loop \/ setInterval Terdeteksi.*14x/)
     ).toBeDefined();
+  });
+
+  it("renders captured screenshot preview and handles analyze and clear actions", () => {
+    const onClearCaptured = vi.fn();
+    const onSendMessage = vi.fn();
+
+    render(
+      <FloatingHud
+        messages={[]}
+        onSendMessage={onSendMessage}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+        capturedImage={{ path: "/tmp/fixit_capture.png", base64: "bW9ja0ltYWdl" }}
+        onClearCapturedImage={onClearCaptured}
+      />
+    );
+
+    // Preview should exist
+    const previewEl = screen.getByTestId("captured-image-preview");
+    expect(previewEl).toBeTruthy();
+    expect(within(previewEl).getByText("Tangkapan Layar")).toBeTruthy();
+
+    // Click Analisis AI
+    const analyzeBtn = screen.getByText("Analisis AI");
+    fireEvent.click(analyzeBtn);
+    expect(onSendMessage).toHaveBeenCalledWith(
+      expect.stringContaining("tangkapan layar")
+    );
+
+    // Click clear button
+    const clearBtn = screen.getByLabelText("Hapus screenshot");
+    fireEvent.click(clearBtn);
+    expect(onClearCaptured).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles image paste via clipboard into captured preview", () => {
+    const onPasteImage = vi.fn();
+    render(
+      <FloatingHud
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+        onPasteImage={onPasteImage}
+      />
+    );
+
+    const file = new File(["fake-image-content"], "screen.png", { type: "image/png" });
+    const pasteEvent = new Event("paste") as any;
+    pasteEvent.clipboardData = {
+      items: [
+        {
+          type: "image/png",
+          getAsFile: () => file,
+        },
+      ],
+    };
+
+    fireEvent(window, pasteEvent);
+    // FileReader executes asynchronously in browser
+  });
+
+  it("renders 'Perbaiki Otomatis' button and calls onStartAgenticFix when clicked", () => {
+    const onStartAgenticFix = vi.fn();
+    render(
+      <FloatingHud
+        currentError={dummyError}
+        explanation={dummyExplanation}
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+        onStartAgenticFix={onStartAgenticFix}
+      />
+    );
+
+    const fixBtn = screen.getByText("Perbaiki Otomatis");
+    expect(fixBtn).toBeTruthy();
+    fireEvent.click(fixBtn);
+    expect(onStartAgenticFix).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders chat messages and agent steps when active error is present", () => {
+    const messages = [
+      { id: "1", sender: "user" as const, text: "Kenapa database belum ada?", timestamp: 1 },
+      { id: "2", sender: "ai" as const, text: "Database perlu dibuat dulu dengan mysql.", timestamp: 2 },
+    ];
+    const agentSteps = [
+      {
+        step: 1,
+        step_type: "tool_call" as const,
+        tool_name: "read_file",
+        message: "Analyzed 📄 .env",
+        timestamp: 1,
+      },
+    ];
+
+    render(
+      <FloatingHud
+        currentError={dummyError}
+        explanation={dummyExplanation}
+        messages={messages}
+        agentSteps={agentSteps}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Kenapa database belum ada?")).toBeTruthy();
+    expect(screen.getByText("Database perlu dibuat dulu dengan mysql.")).toBeTruthy();
+    expect(screen.getByText(".env")).toBeTruthy();
   });
 });

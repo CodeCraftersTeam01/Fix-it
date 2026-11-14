@@ -1,3 +1,4 @@
+pub mod agent_engine;
 pub mod ai_client;
 pub mod config;
 pub mod diagnostics;
@@ -220,7 +221,7 @@ pub mod commands {
         let (new_w, new_h, is_expanded) = if logical_w > 450.0 {
             (380.0, 640.0, false)
         } else {
-            (540.0, 740.0, true)
+            (760.0, 720.0, true)
         };
 
         window
@@ -272,6 +273,128 @@ pub mod commands {
         if let Some(window) = app.get_webview_window("settings") {
             window.hide().map_err(|e| e.to_string())?;
         }
+        Ok(())
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+    pub struct CapturedScreenResult {
+        pub path: String,
+        pub base64: String,
+    }
+
+    #[tauri::command]
+    pub async fn check_screen_capture_permission() -> Result<bool, String> {
+        #[cfg(target_os = "macos")]
+        {
+            extern "C" {
+                fn CGPreflightScreenCaptureAccess() -> bool;
+            }
+            let has_access = unsafe { CGPreflightScreenCaptureAccess() };
+            Ok(has_access)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(true)
+        }
+    }
+
+    #[tauri::command]
+    pub async fn request_screen_capture_permission() -> Result<bool, String> {
+        #[cfg(target_os = "macos")]
+        {
+            extern "C" {
+                fn CGRequestScreenCaptureAccess() -> bool;
+            }
+            let granted = unsafe { CGRequestScreenCaptureAccess() };
+            Ok(granted)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(true)
+        }
+    }
+
+    #[tauri::command]
+    pub async fn open_screen_capture_settings() -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+            let _ = Command::new("open")
+                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+                .status();
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn start_interactive_screenshot(
+        app: tauri::AppHandle,
+    ) -> Result<Option<CapturedScreenResult>, String> {
+        use std::process::Command;
+        use base64::Engine;
+
+        let path = "/tmp/fixit_capture.png";
+        let _ = std::fs::remove_file(path);
+
+        #[cfg(target_os = "macos")]
+        {
+            extern "C" {
+                fn CGPreflightScreenCaptureAccess() -> bool;
+                fn CGRequestScreenCaptureAccess() -> bool;
+            }
+            let has_access = unsafe { CGPreflightScreenCaptureAccess() };
+            if !has_access {
+                let _ = unsafe { CGRequestScreenCaptureAccess() };
+                let _ = app.emit("fixit-screen-permission-needed", ());
+                return Err("Izin Perekaman Layar belum aktif. Buka System Settings > Privacy & Security > Screen & System Audio Recording, aktifkan FixIt, lalu restart aplikasi FixIt.".to_string());
+            }
+
+            let status = tokio::task::spawn_blocking(move || {
+                Command::new("screencapture")
+                    .args(["-i", "-s", "-x", path])
+                    .status()
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+
+            if !status.success() || !std::path::Path::new(path).exists() {
+                return Ok(None);
+            }
+        }
+
+        if let Ok(bytes) = std::fs::read(path) {
+            if bytes.is_empty() {
+                return Ok(None);
+            }
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let result = CapturedScreenResult {
+                path: path.to_string(),
+                base64: b64,
+            };
+
+            let _ = app.emit("fixit-captured-screen", &result);
+
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+
+            Ok(Some(result))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[tauri::command]
+    pub async fn open_screen_overlay(app: tauri::AppHandle) -> Result<(), String> {
+        let _ = start_interactive_screenshot(app).await?;
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn close_screen_overlay(_app: tauri::AppHandle) -> Result<(), String> {
         Ok(())
     }
 
@@ -399,49 +522,74 @@ pub mod commands {
     #[tauri::command]
     pub async fn ask_followup(
         question: String,
+        image_base64: Option<String>,
+        active_error: Option<CodeError>,
+        workspace_path: Option<String>,
         state: tauri::State<'_, AppState>,
     ) -> Result<String, String> {
-        let conf = state.config.lock().await;
-        if conf.openai_api_key.trim().is_empty() {
-            return Ok("Silakan konfigurasikan OpenAI API Key pada pengaturan FixIt untuk mengaktifkan fitur chat tanya jawab interaktif.".to_string());
-        }
+        let conf = state.config.lock().await.clone();
+        agent_engine::AgentEngine::ask_with_context(
+            &question,
+            image_base64.as_deref(),
+            active_error.as_ref(),
+            workspace_path.as_deref(),
+            &conf,
+        )
+        .await
+    }
 
-        let endpoint = format!("{}/chat/completions", conf.openai_base_url.trim_end_matches('/'));
-        let payload = serde_json::json!({
-            "model": conf.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Anda adalah asisten praktikum pemrograman FixIt. Jawablah pertanyaan mahasiswa secara ramah, ringkas, dan jelas dalam bahasa Indonesia."
-                },
-                {
-                    "role": "user",
-                    "content": question
-                }
-            ],
-            "temperature": 0.4
-        });
+    #[tauri::command]
+    pub async fn run_agentic_fix(
+        error: CodeError,
+        workspace_path: Option<String>,
+        state: tauri::State<'_, AppState>,
+        app_handle: tauri::AppHandle,
+    ) -> Result<String, String> {
+        let conf = state.config.lock().await.clone();
+        agent_engine::AgentEngine::run_agent_fix(
+            &error,
+            workspace_path.as_deref(),
+            &conf,
+            Some(&app_handle),
+        )
+        .await
+    }
 
-        let client = reqwest::Client::new();
-        let resp = client
-            .post(&endpoint)
-            .header("Authorization", format!("Bearer {}", conf.openai_api_key))
-            .json(&payload)
-            .send()
-            .await
+    #[tauri::command]
+    pub async fn capture_screen_region(
+        app: tauri::AppHandle,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+    ) -> Result<CapturedScreenResult, String> {
+        use std::process::Command;
+        use base64::Engine;
+
+        let capture_w = if w < 1 { 1 } else { w };
+        let capture_h = if h < 1 { 1 } else { h };
+
+        let path = "/tmp/fixit_capture.png";
+        let status = Command::new("screencapture")
+            .args(["-x", "-R", &format!("{},{},{},{}", x, y, capture_w, capture_h), path])
+            .status()
             .map_err(|e| e.to_string())?;
+        
+        if status.success() {
+            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let result = CapturedScreenResult {
+                path: path.to_string(),
+                base64: b64,
+            };
 
-        if !resp.status().is_success() {
-            return Err(format!("AI error: {}", resp.status()));
+            // Emit to frontend (main window FloatingHud)
+            let _ = app.emit("fixit-captured-screen", &result);
+
+            Ok(result)
+        } else {
+            Err("Gagal mengambil screenshot".to_string())
         }
-
-        let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        let content = json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("Maaf, tidak dapat memproses jawaban.")
-            .to_string();
-
-        Ok(content)
     }
 
     #[tauri::command]
@@ -568,10 +716,11 @@ pub mod commands {
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Buka FixIt", true, None::<&str>)?;
+    let capture_item = MenuItem::with_id(app, "capture", "Tangkapan Layar (Screenshot Area)...", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "Pengaturan AI & Model...", true, None::<&str>)?;
     let hide_item = MenuItem::with_id(app, "hide", "Sembunyikan Jendela", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Keluar FixIt (Hentikan Background)", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &settings_item, &hide_item, &quit_item])?;
+    let menu = Menu::with_items(app, &[&show_item, &capture_item, &settings_item, &hide_item, &quit_item])?;
 
     let icon = tauri::include_image!("icons/tray.png");
 
@@ -589,6 +738,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let _ = win.unminimize();
                         let _ = win.set_focus();
                     }
+                }
+                "capture" => {
+                    let app_handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = commands::open_screen_overlay(app_handle).await;
+                    });
                 }
                 "settings" => {
                     let _ = app.emit("open-settings", ());
@@ -1010,6 +1165,13 @@ pub fn run() {
     let app_state = AppState::new(initial_config.clone());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -1026,12 +1188,20 @@ pub fn run() {
             commands::save_config,
             commands::analyze_code_error,
             commands::ask_followup,
+            commands::run_agentic_fix,
             commands::discover_ide_workspaces,
             commands::fetch_models_from_provider,
             commands::toggle_hud_expand,
             commands::ping_provider,
             commands::clear_active_error,
-            commands::get_active_errors
+            commands::get_active_errors,
+            commands::capture_screen_region,
+            commands::start_interactive_screenshot,
+            commands::check_screen_capture_permission,
+            commands::request_screen_capture_permission,
+            commands::open_screen_capture_settings,
+            commands::open_screen_overlay,
+            commands::close_screen_overlay
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

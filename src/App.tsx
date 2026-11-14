@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { FloatingHud } from "./components/FloatingHud";
 import { SettingsView } from "./components/settings/SettingsView";
 import { AppSettings } from "./components/settings/types";
-import { CodeError, FixExplanation, ChatMessage, FileActivity, ActiveErrorItem } from "./types";
+import { CodeError, FixExplanation, ChatMessage, FileActivity, ActiveErrorItem, AgentStep } from "./types";
 
 let cachedInvoke: typeof import("@tauri-apps/api/core").invoke | null = null;
 const getInvoke = async () => {
@@ -21,6 +21,8 @@ export function App() {
   const isSettingsRoute = typeof window !== "undefined" && window.location.hash === "#settings";
   const [activeErrors, setActiveErrors] = useState<ActiveErrorItem[]>([]);
   const [selectedErrorIndex, setSelectedErrorIndex] = useState(0);
+  const [capturedImage, setCapturedImage] = useState<{ path: string; base64: string } | null>(null);
+  const [permissionNotice, setPermissionNotice] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingInfo, setAnalyzingInfo] = useState<{
     file_name: string;
@@ -31,6 +33,8 @@ export function App() {
   const [activeFileActivity, setActiveFileActivity] = useState<FileActivity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
 
   const [settings, setSettings] = useState<AppSettings>({
     openai_base_url: "https://api.openai.com/v1",
@@ -142,6 +146,18 @@ export function App() {
             removeErrorByPath(event.payload.file_path);
           }
         });
+        await listen<{ path: string; base64: string }>(
+          "fixit-captured-screen",
+          (event) => {
+            setCapturedImage(event.payload);
+            setPermissionNotice(null);
+          }
+        );
+        await listen("fixit-screen-permission-needed", () => {
+          setPermissionNotice(
+            "Izin Perekaman Layar belum aktif. Buka System Settings > Privacy & Security > Screen & System Audio Recording, aktifkan FixIt, lalu restart aplikasi FixIt."
+          );
+        });
         await listen<FileActivity>("fixit-file-writing", (event) => {
           setActiveFileActivity(event.payload);
         });
@@ -160,12 +176,17 @@ export function App() {
             await invoke("open_settings_window");
           } catch {}
         });
+        await listen<AgentStep>("fixit-agent-step", (event) => {
+          setAgentSteps((prev) => [...prev, event.payload]);
+        });
         await listen("fixit-reset-standby", () => {
           // Pure local state reset - DO NOT re-invoke backend to avoid recursive event storm
           setActiveErrors([]);
           setSelectedErrorIndex(0);
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
+          setAgentSteps([]);
+          setIsAgentRunning(false);
         });
       } catch {
         // Running in standard browser preview
@@ -333,12 +354,54 @@ export function App() {
   const handleClearError = async () => {
     setActiveErrors([]);
     setSelectedErrorIndex(0);
+    setAgentSteps([]);
+    setIsAgentRunning(false);
     try {
       const invoke = await getInvoke();
       if (invoke) {
         await invoke("clear_active_error", { filePath: null });
       }
     } catch {}
+  };
+
+  const handleStartAgenticFix = async () => {
+    if (!currentError || isAgentRunning) return;
+    setIsAgentRunning(true);
+    setAgentSteps([]);
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke<string>("run_agentic_fix", {
+        error: currentError,
+        workspace_path: settings?.watched_paths?.[0] || null,
+      });
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          sender: "ai",
+          text: result,
+          timestamp: Date.now(),
+        },
+      ]);
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "string"
+          ? err
+          : (err as Error)?.message || "Gagal menjalankan perbaikan otomatis";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          sender: "ai",
+          text: `Gagal menjalankan perbaikan otomatis: ${msg}`,
+          timestamp: Date.now(),
+        },
+      ]);
+    } finally {
+      setIsAgentRunning(false);
+    }
   };
 
   const handleSendMessage = async (text: string) => {
@@ -353,7 +416,13 @@ export function App() {
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const reply = await invoke<string>("ask_followup", { question: text });
+      const reply = await invoke<string>("ask_followup", {
+        question: text,
+        image_base64: capturedImage?.base64 || null,
+        active_error: currentError,
+        workspace_path: settings?.watched_paths?.[0] || null,
+      });
+      setCapturedImage(null);
       setMessages((prev) => [
         ...prev,
         {
@@ -431,6 +500,23 @@ export function App() {
       isLoading={isLoading}
       settings={settings}
       onSaveSettings={handleSaveSettings}
+      capturedImage={capturedImage}
+      onClearCapturedImage={() => setCapturedImage(null)}
+      onPasteImage={(img) => setCapturedImage(img)}
+      permissionNotice={permissionNotice}
+      onDismissPermissionNotice={() => setPermissionNotice(null)}
+      onStartAgenticFix={handleStartAgenticFix}
+      isAgentRunning={isAgentRunning}
+      agentSteps={agentSteps}
+      onCaptureScreen={async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("start_interactive_screenshot");
+        } catch (e: unknown) {
+          const msg = typeof e === "string" ? e : (e as Error)?.message || "Gagal memulai screenshot";
+          setPermissionNotice(msg);
+        }
+      }}
     />
   );
 }

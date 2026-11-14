@@ -13,7 +13,6 @@ import {
   Search,
   ExternalLink,
   RefreshCw,
-  Sparkles,
   AlertCircle,
   ArrowLeft,
 } from "lucide-react";
@@ -933,98 +932,61 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {/* Overview Mode: Lists Custom Providers & Default Providers */}
               {!selectedProviderId ? (
                 <div className="space-y-6">
-                  {/* SELEKSI MODEL AKTIF UTAMA FIXIT */}
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-xl space-y-3.5">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-white/[0.08] text-white/90 flex items-center justify-center shrink-0 border border-white/[0.08]">
-                          {activeProvider ? renderProviderLogo(activeProvider, "w-4 h-4") : <Cpu size={15} />}
-                        </div>
-                        <div>
-                          <div className="text-[12px] font-semibold text-white/95 uppercase tracking-wider font-mono flex items-center gap-2">
-                            <span>MODEL AKTIF UTAMA FIXIT</span>
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/[0.08] text-white/70 border border-white/10 font-mono normal-case">
-                              Active Engine
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-white/40">
-                            Pilih model & provider yang digunakan oleh FixIt untuk memantau kode dan menganalisis error di background.
-                          </div>
-                        </div>
+                  {/* Model aktif */}
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {activeProvider && renderProviderLogo(activeProvider, "w-3.5 h-3.5 shrink-0 text-white/70")}
+                        <span className="text-[12px] text-white/60">Model aktif</span>
                       </div>
-
-                      {/* Active Status Badge */}
                       {activeProvider && (
-                        <div className="flex items-center gap-2 font-mono text-[11px]">
-                          {getProviderConnectionCount(activeProvider) > 0 ? (
-                            <span className="px-2.5 py-1 rounded-full bg-white/[0.05] border border-white/10 text-white/80 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white/70"></span>
-                              <span>Siap Digunakan ({activeProvider.name})</span>
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-white/40 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white/20"></span>
-                              <span>Offline (Butuh API Key di {activeProvider.name})</span>
-                            </span>
-                          )}
-                        </div>
+                        <span className="flex items-center gap-1.5 text-[11px] text-white/45 shrink-0">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              getProviderConnectionCount(activeProvider) > 0 ? "bg-emerald-400/80" : "bg-white/25"
+                            }`}
+                          />
+                          {getProviderConnectionCount(activeProvider) > 0 ? "Siap digunakan" : "Butuh API key"}
+                        </span>
                       )}
                     </div>
 
-                    {/* Selector Control */}
-                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap pt-1">
-                      <div className="flex-1 min-w-[220px]">
-                        <select
-                          value={`${activeProviderId}:::${activeModel}`}
-                          onChange={(e) => {
-                            const [pId, mId] = e.target.value.split(":::");
-                            if (pId && mId) {
-                              handleSelectGlobalModel(pId, mId);
-                            }
-                          }}
-                          className="w-full bg-[#12151b] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white/90 focus:outline-none focus:border-white/25 font-mono cursor-pointer shadow-inner"
-                        >
-                          {providers.map((p) => {
-                            const count = getProviderConnectionCount(p);
-                            const isOffline = count === 0;
-                            return (
-                              <optgroup
-                                key={p.id}
-                                label={`${p.name} (${p.category === "custom" ? "Custom" : "Default"}${
-                                  isOffline ? " - 0 Key / Offline" : ` - ${count} Key`
-                                })`}
-                              >
-                                {p.available_models.map((m) => (
-                                  <option key={`${p.id}:::${m.id}`} value={`${p.id}:::${m.id}`}>
-                                    {p.name} — {m.id} {isOffline ? "⚠️ (Offline)" : "✓"}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            );
-                          })}
-                        </select>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={`${activeProviderId}:::${activeModel}`}
+                        onChange={(e) => {
+                          const [pId, mId] = e.target.value.split(":::");
+                          if (pId && mId) {
+                            handleSelectGlobalModel(pId, mId);
+                          }
+                        }}
+                        className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/90 focus:outline-none focus:border-white/20 cursor-pointer"
+                      >
+                        {providers.map((p) => {
+                          const isOffline = getProviderConnectionCount(p) === 0;
+                          return (
+                            <optgroup key={p.id} label={isOffline ? `${p.name} · offline` : p.name}>
+                              {p.available_models.map((m) => (
+                                <option key={`${p.id}:::${m.id}`} value={`${p.id}:::${m.id}`}>
+                                  {p.name} — {m.id}
+                                </option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
+                      </select>
 
                       <button
                         onClick={() => setSelectedProviderId(activeProviderId)}
-                        className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs text-white/85 flex items-center gap-1.5 transition cursor-pointer font-mono shrink-0"
+                        className="px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[12px] text-white/80 transition cursor-pointer shrink-0"
                       >
-                        <Sliders size={13} />
-                        <span>Detail Provider</span>
+                        Detail
                       </button>
                     </div>
 
-                    {/* Active Engine Summary Pill */}
-                    <div className="pt-2 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono text-white/45 flex-wrap gap-2">
-                      <div className="flex items-center gap-2 truncate">
-                        <span>Engine: <span className="text-white/85 font-medium">{activeProvider?.name}</span></span>
-                        <span>•</span>
-                        <span>Model: <span className="text-white font-semibold">{activeModel}</span></span>
-                      </div>
-                      <div className="text-[10px] text-white/35 truncate max-w-xs font-mono">
-                        {activeProvider?.base_url}
-                      </div>
-                    </div>
+                    {activeProvider?.base_url && (
+                      <div className="text-[11px] text-white/30 truncate">{activeProvider.base_url}</div>
+                    )}
                   </div>
 
                   {/* Section 1: Custom Providers */}
@@ -1296,20 +1258,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Section 1: Active Model Selector */}
+                    {/* Model untuk provider ini */}
                     <div className="p-4 rounded-2xl bg-white/[0.02] space-y-2">
-                      <div className="flex items-center justify-between text-[11px] font-mono text-white/40 flex-wrap gap-1">
-                        <span className="flex items-center gap-1.5 uppercase">
-                          <Sparkles size={12} className="text-white/60" /> MODEL AKTIF UNTUK PROVIDER INI:
-                        </span>
-                        <span className="text-white/80 font-semibold">{activeModel}</span>
-                      </div>
+                      <div className="text-[12px] text-white/60">Model untuk provider ini</div>
 
-                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      <div className="flex items-center gap-2">
                         <select
                           value={activeModel}
                           onChange={(e) => setActiveModel(e.target.value)}
-                          className="flex-1 bg-[#12151b] rounded-xl px-3 py-2 text-xs text-white/90 focus:outline-none cursor-pointer font-mono"
+                          className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/90 focus:outline-none focus:border-white/20 cursor-pointer"
                         >
                           {selectedProvider.available_models.map((m) => (
                             <option key={m.id} value={m.id}>

@@ -1,10 +1,11 @@
 import React from "react";
-import { X, Maximize2, Minimize2, Settings } from "lucide-react";
+import { X, Maximize2, Minimize2, Settings, Crop } from "lucide-react";
 
 interface HeaderBarProps {
   onClose?: () => void;
   onOpenSettings?: () => void;
   onExpand?: () => void;
+  onCapture?: () => void;
   isExpanded?: boolean;
   onStartDrag?: (e: React.MouseEvent) => void;
   greeting?: string;
@@ -14,6 +15,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onClose,
   onOpenSettings,
   onExpand,
+  onCapture,
   isExpanded = false,
   onStartDrag,
   greeting,
@@ -55,6 +57,24 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         onMouseDown={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
+        {onCapture && (
+          <button
+            type="button"
+            data-tauri-drag-region="false"
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCapture?.();
+            }}
+            aria-label="Capture Screen"
+            title="Tangkapan Layar (Cmd+I / Ctrl+I)"
+            className="w-9 h-9 rounded-full apple-pill-btn flex items-center justify-center text-white/70 hover:text-white active:scale-90 transition-transform duration-75 cursor-pointer select-none"
+          >
+            <Crop size={15} strokeWidth={2} />
+          </button>
+        )}
+
         <button
           type="button"
           data-tauri-drag-region="false"

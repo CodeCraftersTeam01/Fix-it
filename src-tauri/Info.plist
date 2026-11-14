@@ -6,6 +6,8 @@
     <false/>
     <key>NSAppSleepDisabled</key>
     <true/>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>FixIt membutuhkan izin tangkapan layar untuk mengambil gambar area kode atau error yang Anda seleksi untuk dianalisis oleh AI.</string>
 </dict>
 </plist>
 

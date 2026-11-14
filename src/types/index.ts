@@ -39,3 +39,15 @@ export interface ActiveErrorItem {
   timestamp: number;
 }
 
+export interface AgentStep {
+  step: number;
+  step_type: 'tool_call' | 'tool_result' | 'thought' | 'thinking' | 'finish';
+  tool_name?: string;
+  tool_args?: Record<string, unknown>;
+  result_summary?: string;
+  message?: string;
+  output?: string;
+  timestamp: number;
+}
+
+

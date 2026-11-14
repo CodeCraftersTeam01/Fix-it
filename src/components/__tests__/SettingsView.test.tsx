@@ -58,8 +58,7 @@ describe("SettingsView", () => {
 
   it("renders global active model selector banner", () => {
     render(<SettingsView />);
-    expect(screen.getByText("MODEL AKTIF UTAMA FIXIT")).toBeTruthy();
-    expect(screen.getByText(/Active Engine/i)).toBeTruthy();
+    expect(screen.getByText("Model aktif")).toBeTruthy();
   });
 
   it("displays offline indicator for providers without connections", () => {
