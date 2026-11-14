@@ -260,6 +260,15 @@ impl AgentEngine {
     }
 
     pub fn execute_read_file(root: &Path, p: &str) -> Result<String, String> {
+        Self::execute_read_file_with_range(root, p, None, None)
+    }
+
+    pub fn execute_read_file_with_range(
+        root: &Path,
+        p: &str,
+        start_line: Option<usize>,
+        limit: Option<usize>,
+    ) -> Result<String, String> {
         let clean = p.trim();
         if clean.is_empty() {
             return Err("Path berkas tidak boleh kosong".to_string());
@@ -278,58 +287,58 @@ impl AgentEngine {
             ));
         }
 
-        match std::fs::read_to_string(&target) {
-            Ok(content) => {
-                if content.len() > 30000 {
-                    Ok(format!("{}... (dipotong)", &content[..30000]))
-                } else {
-                    Ok(content)
-                }
+        let content = std::fs::read_to_string(&target)
+            .map_err(|e| format!("Gagal membaca berkas: {}", e))?;
+
+        let lines: Vec<&str> = content.lines().collect();
+        let total_lines = lines.len();
+
+        if let Some(start) = start_line {
+            let start_idx = start.saturating_sub(1).min(total_lines);
+            let take_count = limit.unwrap_or(100).min(total_lines.saturating_sub(start_idx));
+            let end_idx = (start_idx + take_count).min(total_lines);
+
+            let mut out = String::new();
+            out.push_str(&format!(
+                "[Menampilkan baris {}..{} dari {} baris]\n",
+                start_idx + 1,
+                end_idx,
+                total_lines
+            ));
+            for (idx, line) in lines[start_idx..end_idx].iter().enumerate() {
+                out.push_str(&format!("{:4} | {}\n", start_idx + idx + 1, line));
             }
-            Err(e) => Err(format!("Gagal membaca berkas: {}", e)),
+            Ok(out)
+        } else if let Some(lim) = limit {
+            let take_count = lim.min(total_lines);
+            let mut out = String::new();
+            for (idx, line) in lines[..take_count].iter().enumerate() {
+                out.push_str(&format!("{:4} | {}\n", idx + 1, line));
+            }
+            Ok(out)
+        } else {
+            if content.len() > 30000 {
+                Ok(format!(
+                    "{}... (dipotong, gunakan start_line & limit untuk membaca baris spesifik)",
+                    &content[..30000]
+                ))
+            } else {
+                Ok(content)
+            }
         }
     }
 
-    pub fn execute_edit_file(
-        root: &Path,
-        p: &str,
-        target: &str,
-        replacement: &str,
-    ) -> Result<String, String> {
-        let clean = p.trim();
-        if clean.is_empty() {
-            return Err("Path berkas tidak boleh kosong".to_string());
-        }
-        let file_path = Self::resolve_path(root, clean);
-        if !file_path.exists() {
-            return Err(format!("Berkas tidak ditemukan: {}", clean));
-        }
-        let content = std::fs::read_to_string(&file_path)
-            .map_err(|e| format!("Gagal membaca berkas: {}", e))?;
-
-        if !content.contains(target) {
-            return Err(format!(
-                "Teks target tidak ditemukan dalam berkas {}. Pastikan teks target sama persis.",
-                clean
-            ));
-        }
-
-        // Compute starting line of target
-        let target_char_idx = content.find(target).unwrap_or(0);
-        let prefix = &content[..target_char_idx];
-        let target_start_line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
-
-        let all_lines: Vec<&str> = content.lines().collect();
-        let target_line_idx = if target_start_line > 0 {
-            target_start_line - 1
-        } else {
-            0
-        };
+    pub fn build_diff_lines(
+        all_lines: &[&str],
+        target_start_line: usize,
+        target_lines: &[&str],
+        repl_lines: &[&str],
+    ) -> Vec<serde_json::Value> {
+        let mut diff_lines = Vec::new();
+        let target_line_idx = target_start_line.saturating_sub(1);
 
         // Context before (up to 3 lines)
         let ctx_start = target_line_idx.saturating_sub(3);
-        let mut diff_lines = Vec::new();
-
         let mut current_line_num = ctx_start + 1;
         if target_line_idx <= all_lines.len() {
             for line in &all_lines[ctx_start..target_line_idx] {
@@ -343,14 +352,8 @@ impl AgentEngine {
             }
         }
 
-        // Deleted lines (from target)
-        let target_lines: Vec<&str> = if target.is_empty() {
-            Vec::new()
-        } else {
-            target.lines().collect()
-        };
-        let del_count = target_lines.len();
-        for line in &target_lines {
+        // Deleted lines
+        for line in target_lines {
             diff_lines.push(serde_json::json!({
                 "type": "del",
                 "num": current_line_num,
@@ -360,15 +363,9 @@ impl AgentEngine {
             current_line_num += 1;
         }
 
-        // Added lines (from replacement)
-        let repl_lines: Vec<&str> = if replacement.is_empty() {
-            Vec::new()
-        } else {
-            replacement.lines().collect()
-        };
-        let add_count = repl_lines.len();
+        // Added lines
         let mut add_line_num = target_start_line;
-        for line in &repl_lines {
+        for line in repl_lines {
             diff_lines.push(serde_json::json!({
                 "type": "add",
                 "num": add_line_num,
@@ -394,7 +391,210 @@ impl AgentEngine {
             }
         }
 
-        let updated = content.replacen(target, replacement, 1);
+        diff_lines
+    }
+
+    pub fn advanced_replace(
+        content: &str,
+        target: &str,
+        replacement: &str,
+        path: &str,
+    ) -> Result<(String, usize, usize, usize, Vec<serde_json::Value>), String> {
+        let all_lines: Vec<&str> = content.lines().collect();
+
+        // Strategy 1: Exact Substring
+        if let Some(pos) = content.find(target) {
+            let prefix = &content[..pos];
+            let start_line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
+            let updated = format!("{}{}{}", prefix, replacement, &content[pos + target.len()..]);
+            let target_lines: Vec<&str> = if target.is_empty() {
+                Vec::new()
+            } else {
+                target.lines().collect()
+            };
+            let repl_lines: Vec<&str> = if replacement.is_empty() {
+                Vec::new()
+            } else {
+                replacement.lines().collect()
+            };
+            let del_count = target_lines.len().max(1);
+            let add_count = repl_lines.len().max(1);
+            let diff_lines =
+                Self::build_diff_lines(&all_lines, start_line, &target_lines, &repl_lines);
+            return Ok((updated, start_line, del_count, add_count, diff_lines));
+        }
+
+        // Strategy 2: CRLF Normalized Substring
+        if content.contains("\r\n") || target.contains("\r\n") {
+            let c_norm = content.replace("\r\n", "\n");
+            let t_norm = target.replace("\r\n", "\n");
+            if let Some(pos) = c_norm.find(&t_norm) {
+                let prefix = &c_norm[..pos];
+                let start_line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
+                let r_norm = replacement.replace("\r\n", "\n");
+                let updated_norm =
+                    format!("{}{}{}", prefix, r_norm, &c_norm[pos + t_norm.len()..]);
+                let updated = if content.contains("\r\n") {
+                    updated_norm.replace('\n', "\r\n")
+                } else {
+                    updated_norm
+                };
+                let norm_all_lines: Vec<&str> = c_norm.lines().collect();
+                let target_lines: Vec<&str> = t_norm.lines().collect();
+                let repl_lines: Vec<&str> = r_norm.lines().collect();
+                let del_count = target_lines.len().max(1);
+                let add_count = repl_lines.len().max(1);
+                let diff_lines =
+                    Self::build_diff_lines(&norm_all_lines, start_line, &target_lines, &repl_lines);
+                return Ok((updated, start_line, del_count, add_count, diff_lines));
+            }
+        }
+
+        // Strategy 3: Trimmed-Line Sequence Match (Fuzzy Indentation Match from oh-my-pi pi-edit)
+        let t_lines: Vec<&str> = target.lines().collect();
+        let t_non_empty: Vec<(usize, &str)> = t_lines
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| (idx, line.trim()))
+            .filter(|(_, trimmed)| !trimmed.is_empty())
+            .collect();
+
+        if !t_non_empty.is_empty() && t_lines.len() <= all_lines.len() {
+            let seq_len = t_lines.len();
+            let mut matched_idx = None;
+
+            for i in 0..=(all_lines.len().saturating_sub(seq_len)) {
+                let mut full_match = true;
+                for (rel_idx, t_trim) in &t_non_empty {
+                    let file_line = all_lines[i + rel_idx].trim();
+                    if file_line != *t_trim {
+                        full_match = false;
+                        break;
+                    }
+                }
+                if full_match {
+                    matched_idx = Some(i);
+                    break;
+                }
+            }
+
+            if let Some(i) = matched_idx {
+                let start_line = i + 1;
+                let base_indent = all_lines[i]
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect::<String>();
+                let repl_raw: Vec<&str> = replacement.lines().collect();
+                let repl_lines: Vec<String> = repl_raw
+                    .iter()
+                    .map(|line| {
+                        if line.trim().is_empty() {
+                            String::new()
+                        } else if line.starts_with(char::is_whitespace) {
+                            line.to_string()
+                        } else {
+                            format!("{}{}", base_indent, line)
+                        }
+                    })
+                    .collect();
+
+                let mut new_lines = Vec::with_capacity(all_lines.len() + repl_lines.len());
+                new_lines.extend_from_slice(&all_lines[..i]);
+                for r in &repl_lines {
+                    new_lines.push(r.as_str());
+                }
+                if i + seq_len < all_lines.len() {
+                    new_lines.extend_from_slice(&all_lines[i + seq_len..]);
+                }
+                let updated = new_lines.join("\n");
+                let del_slice = &all_lines[i..i + seq_len];
+                let repl_slice_refs: Vec<&str> = repl_lines.iter().map(|s| s.as_str()).collect();
+                let diff_lines =
+                    Self::build_diff_lines(&all_lines, start_line, del_slice, &repl_slice_refs);
+                let del_count = del_slice.len().max(1);
+                let add_count = repl_lines.len().max(1);
+                return Ok((updated, start_line, del_count, add_count, diff_lines));
+            }
+        }
+
+        // Strategy 4: Single-Line Trimmed Substring Search
+        let target_trim = target.trim();
+        if !target_trim.is_empty() {
+            let mut matched_line_idx = None;
+            let mut match_count = 0;
+            for (idx, line) in all_lines.iter().enumerate() {
+                if line.trim() == target_trim || line.contains(target_trim) {
+                    matched_line_idx = Some(idx);
+                    match_count += 1;
+                }
+            }
+            if match_count == 1 {
+                if let Some(i) = matched_line_idx {
+                    let start_line = i + 1;
+                    let base_indent = all_lines[i]
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
+                    let repl_raw: Vec<&str> = replacement.lines().collect();
+                    let repl_lines: Vec<String> = repl_raw
+                        .iter()
+                        .map(|line| {
+                            if line.trim().is_empty() {
+                                String::new()
+                            } else if line.starts_with(char::is_whitespace) {
+                                line.to_string()
+                            } else {
+                                format!("{}{}", base_indent, line)
+                            }
+                        })
+                        .collect();
+
+                    let mut new_lines = Vec::with_capacity(all_lines.len() + repl_lines.len());
+                    new_lines.extend_from_slice(&all_lines[..i]);
+                    for r in &repl_lines {
+                        new_lines.push(r.as_str());
+                    }
+                    if i + 1 < all_lines.len() {
+                        new_lines.extend_from_slice(&all_lines[i + 1..]);
+                    }
+                    let updated = new_lines.join("\n");
+                    let del_slice = &all_lines[i..i + 1];
+                    let repl_slice_refs: Vec<&str> = repl_lines.iter().map(|s| s.as_str()).collect();
+                    let diff_lines =
+                        Self::build_diff_lines(&all_lines, start_line, del_slice, &repl_slice_refs);
+                    let del_count = 1;
+                    let add_count = repl_lines.len().max(1);
+                    return Ok((updated, start_line, del_count, add_count, diff_lines));
+                }
+            }
+        }
+
+        Err(format!(
+            "Teks target tidak ditemukan dalam berkas {}. Pastikan potongan teks yang ingin diganti sesuai dengan isi berkas.",
+            path
+        ))
+    }
+
+    pub fn execute_edit_file(
+        root: &Path,
+        p: &str,
+        target: &str,
+        replacement: &str,
+    ) -> Result<String, String> {
+        let clean = p.trim();
+        if clean.is_empty() {
+            return Err("Path berkas tidak boleh kosong".to_string());
+        }
+        let file_path = Self::resolve_path(root, clean);
+        if !file_path.exists() {
+            return Err(format!("Berkas tidak ditemukan: {}", clean));
+        }
+        let content = std::fs::read_to_string(&file_path)
+            .map_err(|e| format!("Gagal membaca berkas: {}", e))?;
+
+        let (updated, _start_line, del_count, add_count, diff_lines) =
+            Self::advanced_replace(&content, target, replacement, clean)?;
+
         std::fs::write(&file_path, updated)
             .map_err(|e| format!("Gagal menyimpan perubahan berkas: {}", e))?;
 
@@ -553,7 +753,19 @@ impl AgentEngine {
         match tool_name {
             "read_file" => {
                 let p = get_path();
-                Self::execute_read_file(root, p)
+                let start_line = args
+                    .get("start_line")
+                    .or_else(|| args.get("offset"))
+                    .or_else(|| args.get("start"))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize);
+                let limit = args
+                    .get("limit")
+                    .or_else(|| args.get("lines"))
+                    .or_else(|| args.get("count"))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize);
+                Self::execute_read_file_with_range(root, p, start_line, limit)
             }
             "edit_file" => {
                 let p = get_path();
@@ -605,19 +817,174 @@ impl AgentEngine {
         }
     }
 
+    pub fn is_read_only_tool(name: &str) -> bool {
+        name == "read_file" || name == "list_dir"
+    }
+
+    pub fn format_tool_step(fn_name: &str, parsed_args: &serde_json::Value) -> String {
+        let p_arg = parsed_args
+            .get("path")
+            .or_else(|| parsed_args.get("file_path"))
+            .or_else(|| parsed_args.get("file"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let p_basename = Path::new(p_arg)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(p_arg);
+
+        let cmd_arg = parsed_args
+            .get("command")
+            .or_else(|| parsed_args.get("cmd"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        match fn_name {
+            "read_file" => format!(
+                "Analyzed 📄 {}",
+                if p_basename.is_empty() {
+                    "file"
+                } else {
+                    p_basename
+                }
+            ),
+            "edit_file" => {
+                let add_c = parsed_args
+                    .get("replacement")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.lines().count())
+                    .unwrap_or(1);
+                let del_c = parsed_args
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.lines().count())
+                    .unwrap_or(1);
+                let diff_str = if del_c > 0 && add_c > 0 {
+                    format!("+{} -{}", add_c, del_c)
+                } else if add_c > 0 {
+                    format!("+{}", add_c)
+                } else {
+                    format!("-{}", del_c)
+                };
+                format!(
+                    "Edited 📄 {} {}",
+                    if p_basename.is_empty() {
+                        "file"
+                    } else {
+                        p_basename
+                    },
+                    diff_str
+                )
+            }
+            "write_file" => format!(
+                "Created 📄 {}",
+                if p_basename.is_empty() {
+                    "file"
+                } else {
+                    p_basename
+                }
+            ),
+            "list_dir" => format!("Checked 📁 {}", if p_arg.is_empty() { "root" } else { p_arg }),
+            "run_command" => {
+                if cmd_arg.len() > 45 {
+                    format!("{}...", &cmd_arg[..42])
+                } else if !cmd_arg.is_empty() {
+                    cmd_arg.to_string()
+                } else {
+                    "Ran command".to_string()
+                }
+            }
+            other => other.to_string(),
+        }
+    }
+
+    pub async fn execute_tool_batch(
+        root: &Path,
+        tool_calls: &[serde_json::Value],
+        step_count: usize,
+        app_handle: Option<&tauri::AppHandle>,
+        messages: &mut Vec<serde_json::Value>,
+    ) {
+        for (call_idx, tool_call) in tool_calls.iter().enumerate() {
+            let call_id = tool_call["id"].as_str().unwrap_or("call_1");
+            let (fn_name, parsed_args) = Self::extract_tool_call(tool_call);
+            let format_line = Self::format_tool_step(&fn_name, &parsed_args);
+            let unique_step = step_count * 100 + call_idx;
+
+            if let Some(app) = app_handle {
+                let _ = app.emit(
+                    "fixit-agent-step",
+                    AgentStepEvent {
+                        step: unique_step,
+                        step_type: "tool_call".to_string(),
+                        tool_name: Some(fn_name.clone()),
+                        tool_args: Some(parsed_args.clone()),
+                        result_summary: None,
+                        message: Some(format_line.clone()),
+                        output: None,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                    },
+                );
+            }
+
+            let tool_result = Self::execute_tool(root, &fn_name, &parsed_args).await;
+            let output_str = match &tool_result {
+                Ok(res) => res.clone(),
+                Err(e) => format!("Error tool: {}", e),
+            };
+
+            if let Some(app) = app_handle {
+                let _ = app.emit(
+                    "fixit-agent-step",
+                    AgentStepEvent {
+                        step: unique_step,
+                        step_type: "tool_result".to_string(),
+                        tool_name: Some(fn_name.clone()),
+                        tool_args: None,
+                        result_summary: Some(format_line.clone()),
+                        message: Some(format_line),
+                        output: Some(output_str.clone()),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                    },
+                );
+            }
+
+            messages.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": output_str
+            }));
+        }
+    }
+
     pub fn get_tools_spec() -> serde_json::Value {
         serde_json::json!([
             {
                 "type": "function",
                 "function": {
                     "name": "read_file",
-                    "description": "Membaca isi berkas dalam proyek user (misal: .env, config/database.php, model, controller).",
+                    "description": "Membaca isi berkas dalam proyek user. Mendukung start_line dan limit untuk membaca baris tertentu agar efisien.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "path": {
                                 "type": "string",
                                 "description": "Path relatif berkas dari root proyek"
+                            },
+                            "start_line": {
+                                "type": "integer",
+                                "description": "Nomor baris awal (1-indexed, opsional)"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Jumlah baris maksimal yang dibaca (opsional)"
                             }
                         },
                         "required": ["path"]
@@ -914,122 +1281,14 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                     assistant_msg["tool_calls"] = serde_json::json!(tool_calls);
                     messages.push(assistant_msg);
 
-                    for (call_idx, tool_call) in tool_calls.iter().enumerate() {
-                        let call_id = tool_call["id"].as_str().unwrap_or("call_1");
-                        let (fn_name, parsed_args) = Self::extract_tool_call(tool_call);
-
-                        let p_arg = parsed_args
-                            .get("path")
-                            .or_else(|| parsed_args.get("file_path"))
-                            .or_else(|| parsed_args.get("file"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        let p_basename = Path::new(p_arg)
-                            .file_name()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or(p_arg);
-
-                        let cmd_arg = parsed_args
-                            .get("command")
-                            .or_else(|| parsed_args.get("cmd"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        let format_line = match fn_name.as_str() {
-                            "read_file" => format!("Analyzed 📄 {}", if p_basename.is_empty() { "file" } else { p_basename }),
-                            "edit_file" => {
-                                let add_c = parsed_args
-                                    .get("replacement")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.lines().count())
-                                    .unwrap_or(1);
-                                let del_c = parsed_args
-                                    .get("target")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.lines().count())
-                                    .unwrap_or(1);
-                                let diff_str = if del_c > 0 && add_c > 0 {
-                                    format!("+{} -{}", add_c, del_c)
-                                } else if add_c > 0 {
-                                    format!("+{}", add_c)
-                                } else {
-                                    format!("-{}", del_c)
-                                };
-                                format!(
-                                    "Edited 📄 {} {}",
-                                    if p_basename.is_empty() { "file" } else { p_basename },
-                                    diff_str
-                                )
-                            }
-                            "write_file" => format!("Created 📄 {}", if p_basename.is_empty() { "file" } else { p_basename }),
-                            "list_dir" => format!("Checked 📁 {}", if p_arg.is_empty() { "root" } else { p_arg }),
-                            "run_command" => {
-                                if cmd_arg.len() > 45 {
-                                    format!("{}...", &cmd_arg[..42])
-                                } else if !cmd_arg.is_empty() {
-                                    cmd_arg.to_string()
-                                } else {
-                                    "Ran command".to_string()
-                                }
-                            }
-                            other => other.to_string(),
-                        };
-
-                        let unique_step = step_count * 100 + call_idx;
-
-                        if let Some(app) = app_handle {
-                            let _ = app.emit(
-                                "fixit-agent-step",
-                                AgentStepEvent {
-                                    step: unique_step,
-                                    step_type: "tool_call".to_string(),
-                                    tool_name: Some(fn_name.clone()),
-                                    tool_args: Some(parsed_args.clone()),
-                                    result_summary: None,
-                                    message: Some(format_line.clone()),
-                                    output: None,
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis() as u64,
-                                },
-                            );
-                        }
-
-                        // Execute tool locally
-                        let tool_result = Self::execute_tool(&root, &fn_name, &parsed_args).await;
-                        let output_str = match &tool_result {
-                            Ok(res) => res.clone(),
-                            Err(e) => format!("Error tool: {}", e),
-                        };
-
-                        if let Some(app) = app_handle {
-                            let _ = app.emit(
-                                "fixit-agent-step",
-                                AgentStepEvent {
-                                    step: unique_step,
-                                    step_type: "tool_result".to_string(),
-                                    tool_name: Some(fn_name.clone()),
-                                    tool_args: None,
-                                    result_summary: Some(format_line.clone()),
-                                    message: Some(format_line),
-                                    output: Some(output_str.clone()),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis() as u64,
-                                },
-                            );
-                        }
-
-                        // Append tool response
-                        messages.push(serde_json::json!({
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": output_str
-                        }));
-                    }
+                    Self::execute_tool_batch(
+                        &root,
+                        &tool_calls,
+                        step_count,
+                        app_handle,
+                        &mut messages,
+                    )
+                    .await;
                     continue;
                 }
             }
@@ -1125,25 +1384,30 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
         };
 
         let mut system_prompt = format!(
-            "Anda adalah FixIt Superpowered Agentic Engineer (berbasis standar Superpowers Systematic Debugging & Everything Computer Code / ECC).
-Root direktori proyek: {}
+            "Anda adalah FixIt Superpowered Agentic Engineer (berbasis arsitektur oh-my-pi / Stencil Labs & Everything Computer Code / ECC).
+Root direktori proyek siswa: {}
 
-TUGAS UTAMA:
-Pengguna dapat bertanya apa saja, meminta memeriksa ulang ('coba kamu check ulang'), menganalisis, mengedit berkas, atau menyelesaikan masalah di proyeknya.
-JANGAN hanya memberikan teks saran atau menyuruh user menjalankan terminal sendiri jika Anda bisa langsung mengeceknya atau mengeksekusinya menggunakan tools Anda!
+PRINSIP KERJA & DUALITAS OPERASIONAL (CHAT vs AGENTIC REPAIR):
+1. RESPON CHAT BIASA (PERTANYAAN UMUM / TEORI / DISKUSI):
+   - Jika pengguna menyapa ('halo', 'pagi'), menanyakan teori/konsep pemrograman ('apa itu middleware?', 'kenapa pakai PDO?', 'bagaimana routing bekerja?'), atau meminta saran konseptual:
+     * Jawab langsung secara ramah, ringkas, terstruktur, dan edukatif dalam Bahasa Indonesia.
+     * JANGAN memanggil tools jika tidak ada berkas atau sistem proyek yang perlu diperiksa atau diubah!
 
-TOOLS YANG DAPAT ANDA GUNAKAN:
-- read_file(path): Membaca berkas proyek (.env, config, controller, model, migration, dsb)
-- edit_file(path, target, replacement): Mengedit berkas secara presisi untuk memperbaiki kode/konfigurasi
-- write_file(path, content): Membuat berkas baru jika diperlukan
-- list_dir(path): Memeriksa isi folder direktori proyek (misal: database/migrations)
-- run_command(command): Menjalankan perintah terminal di root proyek (contoh: mysql, php artisan)
+2. RESPON AGENTIC CODING & PERBAIKAN SISTEM (AUTONOMOUS ACTIONS):
+   - Jika pengguna meminta memeriksa kode ('coba kamu check ulang', 'cek koneksi db', 'periksa file .env', 'perbaiki error ini', 'jalankan migrasi', 'tolong perbaiki'):
+     * Segera gunakan tools Anda secara mandiri dan proaktif!
+     * JANGAN menyuruh pengguna mengetik atau menjalankan terminal sendiri jika Anda bisa langsung mengeksekusinya via tools!
+     * Setiap turn berharga: batch pemanggilan pembacaan/pemeriksaan independen dalam satu putaran.
+     * Sampaikan pemikiran analisis singkat (Reasoning) sebelum memanggil tools.
+     * Jika menemukan bug atau konfigurasi salah, langsung lakukan perbaikan nyata menggunakan `edit_file` (dengan diff presisi).
+     * Setelah verifikasi selesai, berikan jawaban akhir yang ramah dan konfirmasi status proyek.
 
-ATURAN AGENTIC:
-1. Sebelum memanggil tool, selalu sampaikan pemikiran atau rencana investigasi Anda (Reasoning).
-2. Jika user meminta 'check ulang' atau memperbaiki akses/database/kode, segera gunakan `run_command` atau `read_file` untuk memverifikasi kondisi nyata di sistem.
-3. Jika ditemukan kesalahan (seperti typo di .env atau kode controller), langsung lakukan perbaikan nyata menggunakan `edit_file`.
-4. Setelah seluruh pengecekan atau perbaikan selesai, berikan jawaban akhir yang ramah, jelas, dan solutif dalam bahasa Indonesia.",
+TOOLS TERSEDIA:
+- read_file(path, start_line, limit): Membaca berkas proyek. Gunakan start_line & limit untuk membaca baris spesifik secara cepat dan hemat token.
+- edit_file(path, target, replacement): Mengedit berkas secara presisi dengan diff minimal.
+- write_file(path, content): Membuat berkas baru jika diperlukan.
+- list_dir(path): Memeriksa isi folder direktori proyek.
+- run_command(command): Menjalankan perintah terminal non-interaktif di root proyek (mysql, php artisan, npm, git).",
             root.display()
         );
 
@@ -1275,120 +1539,14 @@ ATURAN AGENTIC:
                     assistant_msg["tool_calls"] = serde_json::json!(tool_calls);
                     messages.push(assistant_msg);
 
-                    for (call_idx, tool_call) in tool_calls.iter().enumerate() {
-                        let call_id = tool_call["id"].as_str().unwrap_or("call_1");
-                        let (fn_name, parsed_args) = Self::extract_tool_call(tool_call);
-
-                        let p_arg = parsed_args
-                            .get("path")
-                            .or_else(|| parsed_args.get("file_path"))
-                            .or_else(|| parsed_args.get("file"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        let p_basename = Path::new(p_arg)
-                            .file_name()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or(p_arg);
-
-                        let cmd_arg = parsed_args
-                            .get("command")
-                            .or_else(|| parsed_args.get("cmd"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        let format_line = match fn_name.as_str() {
-                            "read_file" => format!("Analyzed 📄 {}", if p_basename.is_empty() { "file" } else { p_basename }),
-                            "edit_file" => {
-                                let add_c = parsed_args
-                                    .get("replacement")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.lines().count())
-                                    .unwrap_or(1);
-                                let del_c = parsed_args
-                                    .get("target")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.lines().count())
-                                    .unwrap_or(1);
-                                let diff_str = if del_c > 0 && add_c > 0 {
-                                    format!("+{} -{}", add_c, del_c)
-                                } else if add_c > 0 {
-                                    format!("+{}", add_c)
-                                } else {
-                                    format!("-{}", del_c)
-                                };
-                                format!(
-                                    "Edited 📄 {} {}",
-                                    if p_basename.is_empty() { "file" } else { p_basename },
-                                    diff_str
-                                )
-                            }
-                            "write_file" => format!("Created 📄 {}", if p_basename.is_empty() { "file" } else { p_basename }),
-                            "list_dir" => format!("Checked 📁 {}", if p_arg.is_empty() { "root" } else { p_arg }),
-                            "run_command" => {
-                                if cmd_arg.len() > 45 {
-                                    format!("{}...", &cmd_arg[..42])
-                                } else if !cmd_arg.is_empty() {
-                                    cmd_arg.to_string()
-                                } else {
-                                    "Ran command".to_string()
-                                }
-                            }
-                            other => other.to_string(),
-                        };
-
-                        let unique_step = step_count * 100 + call_idx;
-
-                        if let Some(app) = app_handle {
-                            let _ = app.emit(
-                                "fixit-agent-step",
-                                AgentStepEvent {
-                                    step: unique_step,
-                                    step_type: "tool_call".to_string(),
-                                    tool_name: Some(fn_name.clone()),
-                                    tool_args: Some(parsed_args.clone()),
-                                    result_summary: None,
-                                    message: Some(format_line.clone()),
-                                    output: None,
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis() as u64,
-                                },
-                            );
-                        }
-
-                        let tool_result = Self::execute_tool(&root, &fn_name, &parsed_args).await;
-                        let output_str = match &tool_result {
-                            Ok(res) => res.clone(),
-                            Err(e) => format!("Error tool: {}", e),
-                        };
-
-                        if let Some(app) = app_handle {
-                            let _ = app.emit(
-                                "fixit-agent-step",
-                                AgentStepEvent {
-                                    step: unique_step,
-                                    step_type: "tool_result".to_string(),
-                                    tool_name: Some(fn_name.clone()),
-                                    tool_args: None,
-                                    result_summary: Some(format_line.clone()),
-                                    message: Some(format_line),
-                                    output: Some(output_str.clone()),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis() as u64,
-                                },
-                            );
-                        }
-
-                        messages.push(serde_json::json!({
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": output_str
-                        }));
-                    }
+                    Self::execute_tool_batch(
+                        &root,
+                        &tool_calls,
+                        step_count,
+                        app_handle,
+                        &mut messages,
+                    )
+                    .await;
                     continue;
                 }
             }
@@ -1599,5 +1757,47 @@ mod tests {
         let (name, args) = AgentEngine::extract_tool_call(&merged[0]);
         assert_eq!(name, "read_file");
         assert_eq!(args["path"], ".env");
+    }
+
+    #[test]
+    fn test_advanced_replace_fuzzy_indentation() {
+        let content = "class UserController {\n    public function index() {\n        return view('user');\n    }\n}";
+        // Target has different leading whitespace (unindented)
+        let target = "public function index() {\nreturn view('user');\n}";
+        let replacement = "public function index() {\nreturn response()->json(['status' => 'ok']);\n}";
+
+        let (updated, start_line, del_count, add_count, diff_lines) =
+            AgentEngine::advanced_replace(content, target, replacement, "UserController.php")
+                .unwrap();
+
+        assert_eq!(start_line, 2);
+        assert!(updated.contains("return response()->json(['status' => 'ok']);"));
+        assert!(diff_lines.len() >= 3);
+        assert_eq!(del_count, 3);
+        assert_eq!(add_count, 3);
+    }
+
+    #[test]
+    fn test_read_file_with_range() {
+        let temp = tempfile::tempdir().unwrap();
+        let content = (1..=20)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = AgentEngine::execute_write_file(temp.path(), "numbered.txt", &content);
+
+        // Read lines 5 to 8
+        let slice = AgentEngine::execute_read_file_with_range(
+            temp.path(),
+            "numbered.txt",
+            Some(5),
+            Some(4),
+        )
+        .unwrap();
+
+        assert!(slice.contains("line 5"));
+        assert!(slice.contains("line 8"));
+        assert!(!slice.contains("line 1\n"));
+        assert!(!slice.contains("line 15"));
     }
 }
