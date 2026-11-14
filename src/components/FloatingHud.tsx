@@ -4,7 +4,7 @@ import {
   AlertCircle,
   Wand2,
   ChevronRight,
-  ChevronDown,
+  Brain,
 } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
@@ -80,7 +80,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [localPermissionNotice, setLocalPermissionNotice] = useState<string | null>(null);
   const effectivePermissionNotice = permissionNotice || localPermissionNotice;
   const [expandedStepIndices, setExpandedStepIndices] = useState<Record<number, boolean>>({});
-  const [isThinkingOpenState, setIsThinkingOpenState] = useState<boolean | null>(null);
 
   const toggleStepExpand = (index: number) => {
     setExpandedStepIndices((prev) => ({
@@ -88,18 +87,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       [index]: !prev[index],
     }));
   };
-
-  const thinkingMessages = useMemo(() => {
-    return agentSteps
-      .filter((s) => s.step_type === "thinking")
-      .map((s) => s.message || s.output || "")
-      .filter(Boolean);
-  }, [agentSteps]);
-
-  const latestThinkingText = useMemo(() => {
-    if (thinkingMessages.length === 0) return null;
-    return thinkingMessages.join("\n\n---\n\n");
-  }, [thinkingMessages]);
 
   const finishStep = useMemo(() => {
     return agentSteps.find((s) => s.step_type === "finish") || null;
@@ -121,6 +108,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   }, [messages, finishSummary, finishStep]);
 
   const parsedSteps = useMemo(() => {
+    const thinkingSteps = agentSteps.filter((s) => s.step_type === "thinking");
     const results = agentSteps.filter(
       (s) => s.step_type === "tool_result" || s.step_type === "finish"
     );
@@ -128,7 +116,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       (s) => s.step_type === "tool_call" && !results.some((r) => r.step === s.step)
     );
 
-    const all = [...results, ...inProgressCalls].sort((a, b) => a.timestamp - b.timestamp);
+    const all = [...thinkingSteps, ...results, ...inProgressCalls].sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
 
     return all.map((step) => {
       const rawMsg = step.message || step.result_summary || "";
@@ -136,9 +126,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       let target = "";
       let isDoc = false;
       let isDir = false;
+      let isReasoning = false;
       let diff: { plus: string; minus: string } | null = null;
 
-      if (step.tool_name === "read_file" || rawMsg.startsWith("Analyzed")) {
+      if (step.step_type === "thinking") {
+        verb = "Reasoning";
+        isReasoning = true;
+        target = "";
+      } else if (step.tool_name === "read_file" || rawMsg.startsWith("Analyzed")) {
         verb = "Analyzed";
         isDoc = true;
         target = rawMsg.replace(/^Analyzed\s+📄\s*/, "").replace(/^Membaca berkas\s*/, "");
@@ -175,22 +170,13 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         target: target.trim(),
         isDoc,
         isDir,
+        isReasoning,
         diff,
-        output: step.output || step.result_summary,
+        output: step.output || step.message || step.result_summary,
         isRunning: step.step_type === "tool_call",
       };
     });
   }, [agentSteps]);
-
-  // Otomatis terbuka saat awal thinking; otomatis terlipat saat mulai working / ada tool calls.
-  // User tetap dapat mengklik kapan saja untuk membuka/menutup accordion thinking.
-  const isThinkingOpen = isThinkingOpenState !== null
-    ? isThinkingOpenState
-    : parsedSteps.length === 0;
-
-  const handleToggleThinking = () => {
-    setIsThinkingOpenState(!isThinkingOpen);
-  };
 
   const effectiveActiveErrors: ActiveErrorItem[] = useMemo(() => {
     if (activeErrors && activeErrors.length > 0) {
@@ -499,33 +485,45 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               />
             )}
 
-            {/* Thinking Reasoning Box (Accordion riwayat pemikiran tanpa spinner berputar) */}
-            {latestThinkingText && (
-              <div className="pt-0.5 pb-1 select-none font-mono">
-                <button
-                  type="button"
-                  onClick={handleToggleThinking}
-                  className="flex items-center gap-1.5 py-1 text-[12px] text-white/50 hover:text-white/80 transition cursor-pointer"
-                >
-                  <span className="font-medium tracking-tight">Thinking</span>
-                  <ChevronDown
-                    size={13}
-                    className={`text-white/35 transition-transform ${isThinkingOpen ? "rotate-0" : "-rotate-90"}`}
-                  />
-                </button>
-                {isThinkingOpen && (
-                  <div className="my-1.5 p-3.5 rounded-xl bg-[#121316] border border-white/10 max-h-48 overflow-y-auto text-[12px] font-sans text-white/75 leading-relaxed scrollbar-thin select-text whitespace-pre-wrap">
-                    {latestThinkingText}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Tool Call Activity Stream (Image #3 & DiffViewer style) */}
+            {/* Tool Call Activity Stream (Antigravity Timeline with Inline Reasoning & DiffViewer) */}
             {parsedSteps.length > 0 && (
               <div className="pt-0.5 pb-1 space-y-1.5 select-none font-sans">
                 <div className="rounded-xl bg-white/[0.02] border border-white/[0.04] p-1.5 divide-y divide-white/[0.025] space-y-1">
                   {parsedSteps.map((item, idx) => {
+                    if (item.isReasoning) {
+                      const isReasoningOpen =
+                        expandedStepIndices[idx] ?? (item.isRunning || idx === parsedSteps.length - 1);
+
+                      return (
+                        <div key={idx} className="group py-0.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleStepExpand(idx)}
+                            className="w-full py-1.5 px-2 rounded-lg hover:bg-white/[0.04] flex items-center justify-between text-left text-[12.5px] transition cursor-pointer select-none"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1 truncate pr-2">
+                              <Brain size={14} className="text-white/60 shrink-0" />
+                              <span className="text-white/85 font-sans font-medium text-[12.5px]">Reasoning</span>
+                              {item.isRunning && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0 ml-1" />
+                              )}
+                            </div>
+                            <ChevronRight
+                              size={13}
+                              className={`text-white/30 group-hover:text-white/60 transition-transform shrink-0 ${
+                                isReasoningOpen ? "rotate-90 text-white/70" : ""
+                              }`}
+                            />
+                          </button>
+                          {isReasoningOpen && item.output && (
+                            <div className="my-1.5 mx-1 p-3.5 rounded-xl bg-[#121316] border border-white/10 text-[12px] font-sans text-white/75 leading-relaxed overflow-y-auto max-h-48 whitespace-pre-wrap select-text scrollbar-thin">
+                              {item.output}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
                     const isDiff =
                       item.verb === "Edited" ||
                       (typeof item.output === "string" && item.output.includes('"type":"diff"'));
