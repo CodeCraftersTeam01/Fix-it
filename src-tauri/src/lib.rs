@@ -10,7 +10,7 @@ pub mod watcher;
 
 use ai_client::{AiClient, FixExplanation};
 use config::AppConfig;
-use diagnostics::DiagnosticsParser;
+use diagnostics::{DiagnosticsParser, InspectionResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1106,22 +1106,30 @@ pub fn setup_background_service(
 
                 let editor = detect_active_ide();
 
-                if let Some(mut err) = DiagnosticsParser::inspect_file(&changed_file) {
-                    err.project_name = Some(project.clone());
-                    process_and_emit_error(&app_inner, err).await;
-                } else {
-                    let file_path_str = changed_file.to_string_lossy().to_string();
-                    resolve_file_error(&app_inner, &file_path_str).await;
+                match DiagnosticsParser::inspect_file(&changed_file) {
+                    InspectionResult::Error(mut err) => {
+                        err.project_name = Some(project.clone());
+                        process_and_emit_error(&app_inner, err).await;
+                    }
+                    InspectionResult::Valid => {
+                        let file_path_str = changed_file.to_string_lossy().to_string();
+                        resolve_file_error(&app_inner, &file_path_str).await;
 
-                    // Valid syntax after typing paused
-                    let _ = app_inner.emit("fixit-file-valid", serde_json::json!({
-                        "file_path": file_path_str,
-                        "file_name": file_name,
-                        "project": project,
-                        "editor": editor,
-                        "status": "Sintaks Valid ✓",
-                        "timestamp": current_timestamp()
-                    }));
+                        // Valid syntax verified by language parser/linter
+                        let _ = app_inner.emit("fixit-file-valid", serde_json::json!({
+                            "file_path": file_path_str,
+                            "file_name": file_name,
+                            "project": project,
+                            "editor": editor,
+                            "status": "Sintaks Valid ✓",
+                            "timestamp": current_timestamp()
+                        }));
+                    }
+                    InspectionResult::Unsupported => {
+                        // File type not inspected or no local parser available - do not falsely claim "Sintaks Valid"
+                        let file_path_str = changed_file.to_string_lossy().to_string();
+                        resolve_file_error(&app_inner, &file_path_str).await;
+                    }
                 }
             });
         },
