@@ -526,6 +526,7 @@ pub mod commands {
         active_error: Option<CodeError>,
         workspace_path: Option<String>,
         state: tauri::State<'_, AppState>,
+        app_handle: tauri::AppHandle,
     ) -> Result<String, String> {
         let conf = state.config.lock().await.clone();
         agent_engine::AgentEngine::ask_with_context(
@@ -534,6 +535,7 @@ pub mod commands {
             active_error.as_ref(),
             workspace_path.as_deref(),
             &conf,
+            Some(&app_handle),
         )
         .await
     }

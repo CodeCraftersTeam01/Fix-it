@@ -5,6 +5,7 @@ import {
   Wand2,
   ChevronRight,
   Brain,
+  ArrowDown,
 } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
@@ -212,12 +213,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   const isRepairMode = isAgentRunning || parsedSteps.length > 0;
   const isAtBottomRef = useRef(true);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
     // Pinned to bottom if within 45px
     isAtBottomRef.current = distanceToBottom <= 45;
+    setShowJumpToBottom(distanceToBottom > 80);
   };
 
   // Scroll to top when a fresh error is loaded so student sees the problem first
@@ -846,6 +849,27 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               <X size={12} />
             </button>
           </div>
+        </div>
+      )}
+
+      {showJumpToBottom && (
+        <div className="absolute bottom-[72px] left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => {
+              if (scrollRef.current) {
+                scrollRef.current.scrollTo({
+                  top: scrollRef.current.scrollHeight,
+                  behavior: "smooth",
+                });
+                setShowJumpToBottom(false);
+              }
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-[#18181b]/90 hover:bg-[#27272a] border border-white/15 text-white/90 hover:text-white text-[12px] font-sans font-medium flex items-center gap-1.5 shadow-2xl transition cursor-pointer backdrop-blur-md active:scale-95"
+          >
+            <ArrowDown size={13} className="text-white/80" />
+            <span>Jump to latest</span>
+          </button>
         </div>
       )}
 

@@ -413,6 +413,7 @@ export function App() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
+    setIsAgentRunning(true);
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -423,42 +424,34 @@ export function App() {
         workspace_path: settings?.watched_paths?.[0] || null,
       });
       setCapturedImage(null);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: "ai",
-          text: reply,
-          timestamp: Date.now(),
-        },
-      ]);
-      setIsLoading(false);
-    } catch {
-      setTimeout(() => {
-        let replyText = "Halo! ";
-        const lower = text.toLowerCase();
-        if (lower.includes("cara kerja") || lower.includes("gimana")) {
-          replyText +=
-            "FixIt memantau folder kodinganmu secara pasif. Saat kamu berhenti mengetik (jeda ~2.5s) dan ada error, FixIt akan memunculkan penjelasan dan langkah solusinya di sini.";
-        } else if (lower.includes("error") || lower.includes("fix")) {
-          replyText +=
-            "Jika ada kode yang error, simpan berkas di editor (Cmd + S). FixIt akan mendeteksi barisnya dan menyajikan checklist perbaikan.";
-        } else {
-          replyText +=
-            "Ada yang ingin kamu tanyakan seputar kode praktikummu?";
-        }
-
+      if (reply && reply.trim()) {
         setMessages((prev) => [
           ...prev,
           {
             id: (Date.now() + 1).toString(),
             sender: "ai",
-            text: replyText,
+            text: reply.trim(),
             timestamp: Date.now(),
           },
         ]);
-        setIsLoading(false);
-      }, 400);
+      }
+    } catch (err: unknown) {
+      const errMsg =
+        typeof err === "string"
+          ? err
+          : (err as Error)?.message || "Gagal menghubungi AI";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: "ai",
+          text: `Gagal memproses permintaan: ${errMsg}`,
+          timestamp: Date.now(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+      setIsAgentRunning(false);
     }
   };
 

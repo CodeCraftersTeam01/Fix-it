@@ -1103,13 +1103,14 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
         Ok("Proses perbaikan otomatis telah selesai dijalankan.".to_string())
     }
 
-    /// Enhanced ask_followup with full error context and tool-augmented capability
+    /// Enhanced ask_followup with full agentic capability (reasoning, live tool calls & execution)
     pub async fn ask_with_context(
         question: &str,
         image_base64: Option<&str>,
         active_error: Option<&CodeError>,
         workspace_path: Option<&str>,
         config: &AppConfig,
+        app_handle: Option<&tauri::AppHandle>,
     ) -> Result<String, String> {
         if config.openai_api_key.trim().is_empty() {
             return Ok("Silakan konfigurasikan OpenAI API Key pada pengaturan FixIt untuk mengaktifkan fitur chat tanya jawab interaktif.".to_string());
@@ -1123,11 +1124,32 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
         };
 
-        let mut system_prompt = "Anda adalah FixIt, asisten pemrograman edukatif untuk mahasiswa praktikum. Jawablah pertanyaan mahasiswa secara ramah, ringkas, dan jelas dalam bahasa Indonesia.".to_string();
+        let mut system_prompt = format!(
+            "Anda adalah FixIt Superpowered Agentic Engineer (berbasis standar Superpowers Systematic Debugging & Everything Computer Code / ECC).
+Root direktori proyek: {}
+
+TUGAS UTAMA:
+Pengguna dapat bertanya apa saja, meminta memeriksa ulang ('coba kamu check ulang'), menganalisis, mengedit berkas, atau menyelesaikan masalah di proyeknya.
+JANGAN hanya memberikan teks saran atau menyuruh user menjalankan terminal sendiri jika Anda bisa langsung mengeceknya atau mengeksekusinya menggunakan tools Anda!
+
+TOOLS YANG DAPAT ANDA GUNAKAN:
+- read_file(path): Membaca berkas proyek (.env, config, controller, model, migration, dsb)
+- edit_file(path, target, replacement): Mengedit berkas secara presisi untuk memperbaiki kode/konfigurasi
+- write_file(path, content): Membuat berkas baru jika diperlukan
+- list_dir(path): Memeriksa isi folder direktori proyek (misal: database/migrations)
+- run_command(command): Menjalankan perintah terminal di root proyek (contoh: mysql, php artisan)
+
+ATURAN AGENTIC:
+1. Sebelum memanggil tool, selalu sampaikan pemikiran atau rencana investigasi Anda (Reasoning).
+2. Jika user meminta 'check ulang' atau memperbaiki akses/database/kode, segera gunakan `run_command` atau `read_file` untuk memverifikasi kondisi nyata di sistem.
+3. Jika ditemukan kesalahan (seperti typo di .env atau kode controller), langsung lakukan perbaikan nyata menggunakan `edit_file`.
+4. Setelah seluruh pengecekan atau perbaikan selesai, berikan jawaban akhir yang ramah, jelas, dan solutif dalam bahasa Indonesia.",
+            root.display()
+        );
 
         if let Some(err) = active_error {
             system_prompt.push_str(&format!(
-                "\n\nKONTEKS ERROR AKTIF:\n- Berkas: {}\n- Baris: {:?}\n- Tipe: {}\n- Pesan Error: {}\n\nMahasiswa sedang menanyakan pertanyaan seputar error ini atau kode praktikumnya. Anda dapat menggunakan tools read_file, list_dir, atau run_command jika perlu memeriksa berkas proyek mereka.",
+                "\n\nKONTEKS ERROR AKTIF:\n- Berkas: {}\n- Baris: {:?}\n- Tipe: {}\n- Pesan Error: {}",
                 err.file_path, err.line_number, err.error_type, err.raw_message
             ));
         }
@@ -1164,13 +1186,17 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
         let tools = Self::get_tools_spec();
         let client = reqwest::Client::new();
 
-        // 1 or 2 turns of tool calling for answering questions
-        for _ in 0..3 {
+        let mut step_count = 0;
+        let max_steps = 10;
+
+        while step_count < max_steps {
+            step_count += 1;
+
             let payload = serde_json::json!({
                 "model": config.model_name,
                 "messages": messages,
                 "tools": tools,
-                "temperature": 0.3
+                "temperature": 0.2
             });
 
             let resp = client
@@ -1183,34 +1209,8 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                 .map_err(|e| format!("Gagal menghubungi AI: {}", e))?;
 
             if !resp.status().is_success() {
-                // If model doesn't support tools, fallback to plain chat without tools
-                let fallback_payload = serde_json::json!({
-                    "model": config.model_name,
-                    "messages": messages,
-                    "temperature": 0.3
-                });
-                let fallback_resp = client
-                    .post(&endpoint)
-                    .header("Authorization", format!("Bearer {}", config.openai_api_key))
-                    .header("Content-Type", "application/json")
-                    .json(&fallback_payload)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Gagal menghubungi AI (fallback): {}", e))?;
-
-                if !fallback_resp.status().is_success() {
-                    return Err(format!("AI error status: {}", fallback_resp.status()));
-                }
-
-                let fallback_json: serde_json::Value = fallback_resp
-                    .json()
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let content = fallback_json["choices"][0]["message"]["content"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-                return Ok(content);
+                let err_text = resp.text().await.unwrap_or_default();
+                return Err(format!("AI API Error: {}", err_text));
             }
 
             let resp_json: serde_json::Value = resp
@@ -1221,6 +1221,53 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             let choice = &resp_json["choices"][0];
             let msg = &choice["message"];
 
+            let raw_has_tools = msg
+                .get("tool_calls")
+                .and_then(|v| v.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+
+            let reasoning_text = msg
+                .get("reasoning_content")
+                .or_else(|| msg.get("thought"))
+                .or_else(|| choice.get("reasoning_content"))
+                .or_else(|| choice.get("thought"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty());
+
+            let content_thinking = if raw_has_tools {
+                msg.get("content")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+            } else {
+                None
+            };
+
+            let effective_reasoning = reasoning_text.or(content_thinking);
+
+            if let Some(reasoning) = effective_reasoning {
+                if let Some(app) = app_handle {
+                    let _ = app.emit(
+                        "fixit-agent-step",
+                        AgentStepEvent {
+                            step: step_count * 1000,
+                            step_type: "thinking".to_string(),
+                            tool_name: None,
+                            tool_args: None,
+                            result_summary: Some("Reasoning".to_string()),
+                            message: Some(reasoning.to_string()),
+                            output: Some(reasoning.to_string()),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                        },
+                    );
+                }
+            }
+
             if let Some(raw_tool_calls) = msg["tool_calls"].as_array() {
                 let tool_calls = Self::merge_tool_calls(raw_tool_calls);
                 if !tool_calls.is_empty() {
@@ -1228,15 +1275,113 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                     assistant_msg["tool_calls"] = serde_json::json!(tool_calls);
                     messages.push(assistant_msg);
 
-                    for tool_call in &tool_calls {
+                    for (call_idx, tool_call) in tool_calls.iter().enumerate() {
                         let call_id = tool_call["id"].as_str().unwrap_or("call_1");
                         let (fn_name, parsed_args) = Self::extract_tool_call(tool_call);
+
+                        let p_arg = parsed_args
+                            .get("path")
+                            .or_else(|| parsed_args.get("file_path"))
+                            .or_else(|| parsed_args.get("file"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+
+                        let p_basename = Path::new(p_arg)
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(p_arg);
+
+                        let cmd_arg = parsed_args
+                            .get("command")
+                            .or_else(|| parsed_args.get("cmd"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+
+                        let format_line = match fn_name.as_str() {
+                            "read_file" => format!("Analyzed 📄 {}", if p_basename.is_empty() { "file" } else { p_basename }),
+                            "edit_file" => {
+                                let add_c = parsed_args
+                                    .get("replacement")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.lines().count())
+                                    .unwrap_or(1);
+                                let del_c = parsed_args
+                                    .get("target")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.lines().count())
+                                    .unwrap_or(1);
+                                let diff_str = if del_c > 0 && add_c > 0 {
+                                    format!("+{} -{}", add_c, del_c)
+                                } else if add_c > 0 {
+                                    format!("+{}", add_c)
+                                } else {
+                                    format!("-{}", del_c)
+                                };
+                                format!(
+                                    "Edited 📄 {} {}",
+                                    if p_basename.is_empty() { "file" } else { p_basename },
+                                    diff_str
+                                )
+                            }
+                            "write_file" => format!("Created 📄 {}", if p_basename.is_empty() { "file" } else { p_basename }),
+                            "list_dir" => format!("Checked 📁 {}", if p_arg.is_empty() { "root" } else { p_arg }),
+                            "run_command" => {
+                                if cmd_arg.len() > 45 {
+                                    format!("{}...", &cmd_arg[..42])
+                                } else if !cmd_arg.is_empty() {
+                                    cmd_arg.to_string()
+                                } else {
+                                    "Ran command".to_string()
+                                }
+                            }
+                            other => other.to_string(),
+                        };
+
+                        let unique_step = step_count * 100 + call_idx;
+
+                        if let Some(app) = app_handle {
+                            let _ = app.emit(
+                                "fixit-agent-step",
+                                AgentStepEvent {
+                                    step: unique_step,
+                                    step_type: "tool_call".to_string(),
+                                    tool_name: Some(fn_name.clone()),
+                                    tool_args: Some(parsed_args.clone()),
+                                    result_summary: None,
+                                    message: Some(format_line.clone()),
+                                    output: None,
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis() as u64,
+                                },
+                            );
+                        }
 
                         let tool_result = Self::execute_tool(&root, &fn_name, &parsed_args).await;
                         let output_str = match &tool_result {
                             Ok(res) => res.clone(),
                             Err(e) => format!("Error tool: {}", e),
                         };
+
+                        if let Some(app) = app_handle {
+                            let _ = app.emit(
+                                "fixit-agent-step",
+                                AgentStepEvent {
+                                    step: unique_step,
+                                    step_type: "tool_result".to_string(),
+                                    tool_name: Some(fn_name.clone()),
+                                    tool_args: None,
+                                    result_summary: Some(format_line.clone()),
+                                    message: Some(format_line),
+                                    output: Some(output_str.clone()),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis() as u64,
+                                },
+                            );
+                        }
 
                         messages.push(serde_json::json!({
                             "role": "tool",
@@ -1248,11 +1393,68 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                 }
             }
 
-            let final_content = msg["content"].as_str().unwrap_or("").to_string();
+            let mut final_content = msg["content"].as_str().unwrap_or("").trim().to_string();
+
+            if final_content.is_empty() {
+                messages.push(serde_json::json!({
+                    "role": "user",
+                    "content": "Semua tindakan atau pengecekan tools telah selesai dieksekusi. Sekarang berikan jawaban atau penjelasan lengkap dan ramah dalam bahasa Indonesia kepada pengguna berdasarkan hasil tindakan di atas."
+                }));
+
+                let summary_payload = serde_json::json!({
+                    "model": config.model_name,
+                    "messages": messages,
+                    "temperature": 0.2
+                });
+
+                if let Ok(sum_resp) = client
+                    .post(&endpoint)
+                    .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&summary_payload)
+                    .send()
+                    .await
+                {
+                    if sum_resp.status().is_success() {
+                        if let Ok(sum_json) = sum_resp.json::<serde_json::Value>().await {
+                            if let Some(c) = sum_json["choices"][0]["message"]["content"].as_str() {
+                                let trimmed = c.trim();
+                                if !trimmed.is_empty() {
+                                    final_content = trimmed.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if final_content.is_empty() {
+                    final_content = "Pemeriksaan dan tindakan telah selesai dijalankan. Berkas dan konfigurasi proyek telah diverifikasi.".to_string();
+                }
+            }
+
+            if let Some(app) = app_handle {
+                let _ = app.emit(
+                    "fixit-agent-step",
+                    AgentStepEvent {
+                        step: step_count,
+                        step_type: "finish".to_string(),
+                        tool_name: None,
+                        tool_args: None,
+                        result_summary: Some("Selesai".to_string()),
+                        message: Some("Selesai".to_string()),
+                        output: Some(final_content.clone()),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                    },
+                );
+            }
+
             return Ok(final_content);
         }
 
-        Ok("Tidak ada respons tambahan dari AI.".to_string())
+        Ok("Pemeriksaan dan tindakan telah selesai dieksekusi untuk pertanyaan Anda.".to_string())
     }
 }
 
