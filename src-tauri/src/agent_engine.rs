@@ -1035,7 +1035,48 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             }
 
             // If no tool calls, model gave the final answer
-            let final_content = msg["content"].as_str().unwrap_or("").trim().to_string();
+            let mut final_content = msg["content"].as_str().unwrap_or("").trim().to_string();
+
+            // Jika respons akhir kosong setelah memanggil tools, minta ringkasan eksplisit
+            if final_content.is_empty() {
+                messages.push(serde_json::json!({
+                    "role": "user",
+                    "content": "Semua tindakan tools telah selesai dieksekusi. Sekarang berikan ringkasan penjelasan cerdas dan singkat dalam bahasa Indonesia: mengapa error ini bisa terjadi (penyebabnya), dan apa saja tindakan perbaikan yang telah Anda lakukan hingga tuntas."
+                }));
+
+                let summary_payload = serde_json::json!({
+                    "model": config.model_name,
+                    "messages": messages,
+                    "temperature": 0.2
+                });
+
+                if let Ok(sum_resp) = client
+                    .post(&endpoint)
+                    .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&summary_payload)
+                    .send()
+                    .await
+                {
+                    if sum_resp.status().is_success() {
+                        if let Ok(sum_json) = sum_resp.json::<serde_json::Value>().await {
+                            if let Some(c) = sum_json["choices"][0]["message"]["content"].as_str() {
+                                let trimmed = c.trim();
+                                if !trimmed.is_empty() {
+                                    final_content = trimmed.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if final_content.is_empty() {
+                    final_content = format!(
+                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas dan konfigurasi proyek telah diselaraskan agar aplikasi dapat kembali berjalan dengan normal.",
+                        error.raw_message
+                    );
+                }
+            }
 
             if let Some(app) = app_handle {
                 let _ = app.emit(

@@ -101,6 +101,25 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     return thinkingMessages.join("\n\n---\n\n");
   }, [thinkingMessages]);
 
+  const finishStep = useMemo(() => {
+    return agentSteps.find((s) => s.step_type === "finish") || null;
+  }, [agentSteps]);
+
+  const finishSummary = finishStep?.output?.trim();
+
+  const displayMessages = useMemo(() => {
+    const list = [...messages];
+    if (finishSummary && !list.some((m) => m.text.trim() === finishSummary)) {
+      list.push({
+        id: "finish-summary",
+        sender: "ai",
+        text: finishSummary,
+        timestamp: finishStep?.timestamp || Date.now(),
+      });
+    }
+    return list;
+  }, [messages, finishSummary, finishStep]);
+
   const parsedSteps = useMemo(() => {
     const results = agentSteps.filter(
       (s) => s.step_type === "tool_result" || s.step_type === "finish"
@@ -480,15 +499,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               />
             )}
 
-            {/* Thinking Reasoning Box (matching Image uploaded_media_1794670734118.png) */}
-            {(latestThinkingText || thinkingMessages.length > 0 || (isAgentRunning && parsedSteps.length === 0)) && (
+            {/* Thinking Reasoning Box (Accordion riwayat pemikiran tanpa spinner berputar) */}
+            {latestThinkingText && (
               <div className="pt-0.5 pb-1 select-none font-mono">
                 <button
                   type="button"
                   onClick={handleToggleThinking}
-                  className="flex items-center gap-2 py-1 text-[12.5px] text-white/60 hover:text-white/90 transition cursor-pointer"
+                  className="flex items-center gap-1.5 py-1 text-[12px] text-white/50 hover:text-white/80 transition cursor-pointer"
                 >
-                  <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white/80 rounded-full animate-spin shrink-0" />
                   <span className="font-medium tracking-tight">Thinking</span>
                   <ChevronDown
                     size={13}
@@ -497,7 +515,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 </button>
                 {isThinkingOpen && (
                   <div className="my-1.5 p-3.5 rounded-xl bg-[#121316] border border-white/10 max-h-48 overflow-y-auto text-[12px] font-sans text-white/75 leading-relaxed scrollbar-thin select-text whitespace-pre-wrap">
-                    {latestThinkingText || "Menganalisis berkas dan konteks error untuk menentukan tindakan perbaikan..."}
+                    {latestThinkingText}
                   </div>
                 )}
               </div>
@@ -606,32 +624,35 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {/* Respon AI / Chat Hasil Agentic (Clean Typography, Tanpa Card Berat) */}
-            {messages.length > 0 && (
-              <div className="pt-2 space-y-3 font-sans">
-                {messages.map((msg) => (
-                  <div key={msg.id} className="text-left">
-                    {msg.sender === "user" ? (
-                      <div className="flex justify-end my-1">
-                        <div className="px-3 py-1.5 rounded-2xl bg-white/15 text-white text-[12.5px] leading-relaxed max-w-[85%]">
+            {/* Respon AI / Ringkasan Hasil Perbaikan */}
+            {displayMessages.length > 0 && (
+              <div className="pt-2.5 space-y-3 font-sans select-text">
+                {displayMessages.map((msg) => (
+                  msg.text.trim() ? (
+                    <div key={msg.id} className="text-left">
+                      {msg.sender === "user" ? (
+                        <div className="flex justify-end my-1">
+                          <div className="px-3 py-1.5 rounded-2xl bg-white/15 text-white text-[12.5px] leading-relaxed max-w-[85%] font-medium">
+                            {msg.text}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[13px] text-white/90 leading-relaxed whitespace-pre-wrap selection:bg-white/20 font-normal">
                           {msg.text}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="text-[13px] text-white/85 leading-relaxed whitespace-pre-wrap selection:bg-white/20 pl-0.5 pr-0.5 font-normal">
-                        {msg.text}
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  ) : null
                 ))}
               </div>
             )}
 
-            {/* Thinking Working Animation (Matching Image #1: ◌ Thinking) */}
+            {/* Status Agent: Working saat ada aksi/tool call, Thinking saat analisis awal (tanpa spinner berputar) */}
             {isAgentRunning && (
-              <div className="flex items-center gap-2 pt-2.5 pb-1 text-[12.5px] text-white/55 font-mono select-none">
-                <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white/80 rounded-full animate-spin shrink-0" />
-                <span className="animate-text-shine font-medium tracking-tight">Thinking</span>
+              <div className="pt-2 pb-1 text-[12.5px] font-mono select-none">
+                <span className="text-white/50 font-medium tracking-tight animate-text-shine">
+                  {parsedSteps.length > 0 ? "Working" : "Thinking"}
+                </span>
               </div>
             )}
           </div>
