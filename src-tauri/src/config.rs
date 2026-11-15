@@ -38,7 +38,7 @@ pub struct AppConfig {
 }
 
 fn default_active_provider() -> String {
-    "ciora".to_string()
+    "openai".to_string()
 }
 
 fn default_custom_providers() -> Vec<CustomProvider> {
@@ -74,7 +74,7 @@ impl Default for AppConfig {
         Self {
             openai_base_url: "https://api.openai.com/v1".to_string(),
             openai_api_key: String::new(),
-            model_name: "gpt-4o-mini".to_string(),
+            model_name: "gpt-4o".to_string(),
             idle_delay_ms: 2500,
             watched_paths: Vec::new(),
             active_provider: default_active_provider(),
@@ -210,7 +210,8 @@ mod tests {
     fn test_default_config_values() {
         let config = AppConfig::default();
         assert_eq!(config.openai_base_url, "https://api.openai.com/v1");
-        assert_eq!(config.model_name, "gpt-4o-mini");
+        assert_eq!(config.model_name, "gpt-4o");
+        assert_eq!(config.active_provider, "openai");
         assert_eq!(config.idle_delay_ms, 2500);
         assert!(config.watched_paths.is_empty());
     }

@@ -215,8 +215,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeTab, setActiveTab] = useState<"models" | "folders" | "general" | "about">("models");
   const [providers, setProviders] = useState<AIProvider[]>(INITIAL_PROVIDERS);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
-  const [activeProviderId, setActiveProviderId] = useState<string>("ciora");
-  const [activeModel, setActiveModel] = useState<string>("glm-5.3-flash-free");
+  const [activeProviderId, setActiveProviderId] = useState<string>("openai");
+  const [activeModel, setActiveModel] = useState<string>("gpt-4o");
   const [newKeyInput, setNewKeyInput] = useState<string>("");
   const apiKeyInputRef = React.useRef<HTMLInputElement>(null);
   const [newModelIdInput, setNewModelIdInput] = useState<string>("");
@@ -382,7 +382,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       model_name: modelToSave,
       idle_delay_ms: idleDelayMs,
       watched_paths: watchedPaths,
-      active_provider: currentP?.id || providerIdToSave || "ciora",
+      active_provider: currentP?.id || providerIdToSave || "openai",
       custom_providers: customList,
     };
 

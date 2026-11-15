@@ -42,7 +42,7 @@
 
 ## 💡 What is FixIt?
 
-**FixIt** is a lightweight, zero-latency desktop companion built specifically to solve the frustration of debugging coding errors. It runs silently in the background, non-intrusively monitors student or developer project directories, catches syntax breaks the moment you pause typing (*Smart Idle Debounce*), and delivers a native **Apple Dark Glass Floating HUD**.
+**FixIt** is a lightweight, zero-latency desktop companion built specifically to solve the frustration of debugging coding errors. It runs silently in the background, non-intrusively monitors student or developer project directories, catches syntax breaks the moment you pause typing (*Smart Idle Debounce*), and delivers a native **Pitch Dark Glass Floating HUD**.
 
 Unlike standard chat interfaces that force you to copy-paste code back and forth, FixIt works as an **Autonomous AI Agent**:
 1. **Reads** your project context and broken files.
@@ -73,7 +73,7 @@ Unlike standard chat interfaces that force you to copy-paste code back and forth
 - **Burst Throttling**: Normalizes fingerprints to prevent repetitive error storms or runaway `setInterval` loops from spamming notifications or draining API tokens.
 - **Active Repair Window**: Temporarily silences file-watcher feedback while FixIt's AI agent applies code modifications to eliminate false-positive recursive triggers.
 
-### 🪟 5. Apple Dark Glass Floating HUD
+### 🪟 5. Pitch Dark Glass Floating HUD
 - **Sleek Glassmorphic Design**: Frameless transparent window with background blur, subtle borders, and smooth transitions tailored to macOS and modern Windows desktops.
 - **Interactive Reasoning Dropdowns**: Real-time collapsibles display the agent's thought chain, tools executed, and line-level diff viewers.
 - **AskBar ("Tanya FixIt apa saja...")**: Follow-up chat input equipped with interactive screen region capture and prompt history.
@@ -163,13 +163,19 @@ FixIt/
 ```
 
 ### Supported AI Providers
-FixIt connects out-of-the-box to any OpenAI-compatible API:
-- **Ciora AI** (Default optimized endpoint)
-- **OpenAI** (`gpt-4o`, `gpt-4o-mini`)
-- **Google Gemini** (via OpenAI compatibility endpoint)
-- **DeepSeek** (`deepseek-chat`, `deepseek-coder`, `deepseek-reasoner`)
-- **Ollama** (Local private models on `http://localhost:11434/v1`)
-- **Groq & OpenRouter**
+
+FixIt connects out-of-the-box to industry-leading AI providers and any OpenAI-compatible API:
+
+| Provider | Endpoint | Default Model | Highlights |
+| :--- | :--- | :--- | :--- |
+| **OpenAI** | `api.openai.com` | `gpt-4o` | Primary flagship reasoning (`gpt-4o`, `gpt-4o-mini`, `o3-mini`, `o1`) |
+| **Anthropic Claude** | `api.anthropic.com` | `claude-3-7-sonnet` | Hybrid reasoning & software architecture (`claude-3-7-sonnet`, `claude-3-5-sonnet`) |
+| **Google Gemini** | `generativelanguage.googleapis.com` | `gemini-2.0-flash` | High-speed multimodal & precise diagnostics (`gemini-2.0-flash`, `gemini-1.5-pro`) |
+| **DeepSeek AI** | `api.deepseek.com` | `deepseek-chat` | Coding benchmark specialist & chain-of-thought (`deepseek-chat`, `deepseek-reasoner`) |
+| **Groq LPU** | `api.groq.com` | `llama-3.3-70b-versatile` | Ultra-low latency 500+ tokens/sec inference (`llama-3.3-70b-versatile`, `deepseek-r1-distill-llama-70b`) |
+| **OpenRouter** | `openrouter.ai` | `deepseek/deepseek-r1:free` | Free community model hub & multi-provider fallback hub |
+
+*Also supports local models via **Ollama** (`http://localhost:11434/v1`), **LM Studio**, and custom private OpenAI-compatible endpoints.*
 
 ---
 

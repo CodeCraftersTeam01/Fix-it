@@ -53,10 +53,10 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>({
     openai_base_url: "https://api.openai.com/v1",
     openai_api_key: "",
-    model_name: "glm-5.3-flash-free",
+    model_name: "gpt-4o",
     idle_delay_ms: 2500,
     watched_paths: ["/Users/arjunalanangadiwarsana/Herd/FixIt"],
-    active_provider: "ciora",
+    active_provider: "openai",
   });
 
   const pathMatches = (p1: string, p2: string) => {
