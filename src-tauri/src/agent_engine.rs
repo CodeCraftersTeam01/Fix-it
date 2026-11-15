@@ -1084,8 +1084,9 @@ impl AgentEngine {
         config: &AppConfig,
         app_handle: Option<&tauri::AppHandle>,
     ) -> Result<String, String> {
-        if config.openai_api_key.trim().is_empty() {
-            return Err("Silakan masukkan OpenAI API Key di pengaturan FixIt untuk mengaktifkan perbaikan otomatis agentic.".to_string());
+        let (base_url, api_key, model_name) = config.get_effective_llm_config();
+        if api_key.trim().is_empty() {
+            return Err("Silakan masukkan API Key di pengaturan FixIt untuk mengaktifkan perbaikan otomatis agentic.".to_string());
         }
 
         let root = Self::find_project_root(&error.file_path, workspace_path);
@@ -1169,7 +1170,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             }),
         ];
 
-        let endpoint = format!("{}/chat/completions", config.openai_base_url.trim_end_matches('/'));
+        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
         let tools = Self::get_tools_spec();
         let client = reqwest::Client::new();
 
@@ -1201,15 +1202,15 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             step_count += 1;
 
             let payload = serde_json::json!({
-                "model": config.model_name,
+                "model": model_name,
                 "messages": messages,
                 "tools": tools,
                 "temperature": 0.2
             });
 
-            let resp = client
+            let mut resp = client
                 .post(&endpoint)
-                .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                .header("Authorization", format!("Bearer {}", api_key))
                 .header("Content-Type", "application/json")
                 .json(&payload)
                 .send()
@@ -1217,8 +1218,30 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                 .map_err(|e| format!("Gagal menghubungi AI: {}", e))?;
 
             if !resp.status().is_success() {
-                let err_text = resp.text().await.unwrap_or_default();
-                return Err(format!("AI API Error: {}", err_text));
+                // If failed with tools, retry without tools
+                let payload_no_tools = serde_json::json!({
+                    "model": model_name,
+                    "messages": messages,
+                    "temperature": 0.2
+                });
+                if let Ok(retry_resp) = client
+                    .post(&endpoint)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&payload_no_tools)
+                    .send()
+                    .await
+                {
+                    if retry_resp.status().is_success() {
+                        resp = retry_resp;
+                    } else {
+                        let err_text = resp.text().await.unwrap_or_default();
+                        return Err(format!("AI API Error: {}", err_text));
+                    }
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    return Err(format!("AI API Error: {}", err_text));
+                }
             }
 
             let resp_json: serde_json::Value = resp
@@ -1414,7 +1437,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                     }));
 
                     let summary_payload = serde_json::json!({
-                        "model": config.model_name,
+                        "model": model_name,
                         "messages": messages,
                         "temperature": 0.2
                     });
@@ -1426,7 +1449,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
 
                     if let Ok(sum_resp) = fast_client
                         .post(&endpoint)
-                        .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                        .header("Authorization", format!("Bearer {}", api_key))
                         .header("Content-Type", "application/json")
                         .json(&summary_payload)
                         .send()
@@ -1488,8 +1511,9 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
         config: &AppConfig,
         app_handle: Option<&tauri::AppHandle>,
     ) -> Result<String, String> {
-        if config.openai_api_key.trim().is_empty() {
-            return Ok("Silakan konfigurasikan OpenAI API Key pada pengaturan FixIt untuk mengaktifkan fitur chat tanya jawab interaktif.".to_string());
+        let (base_url, api_key, model_name) = config.get_effective_llm_config();
+        if api_key.trim().is_empty() {
+            return Ok("Silakan konfigurasikan API Key pada pengaturan FixIt untuk mengaktifkan fitur chat tanya jawab interaktif.".to_string());
         }
 
         let root = if let Some(err) = active_error {
@@ -1563,7 +1587,7 @@ TOOLS TERSEDIA:
             }),
         ];
 
-        let endpoint = format!("{}/chat/completions", config.openai_base_url.trim_end_matches('/'));
+        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
         let tools = Self::get_tools_spec();
         let client = reqwest::Client::new();
 
@@ -1574,15 +1598,15 @@ TOOLS TERSEDIA:
             step_count += 1;
 
             let payload = serde_json::json!({
-                "model": config.model_name,
+                "model": model_name,
                 "messages": messages,
                 "tools": tools,
                 "temperature": 0.2
             });
 
-            let resp = client
+            let mut resp = client
                 .post(&endpoint)
-                .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                .header("Authorization", format!("Bearer {}", api_key))
                 .header("Content-Type", "application/json")
                 .json(&payload)
                 .send()
@@ -1590,8 +1614,30 @@ TOOLS TERSEDIA:
                 .map_err(|e| format!("Gagal menghubungi AI: {}", e))?;
 
             if !resp.status().is_success() {
-                let err_text = resp.text().await.unwrap_or_default();
-                return Err(format!("AI API Error: {}", err_text));
+                // If failed with tools, retry without tools
+                let payload_no_tools = serde_json::json!({
+                    "model": model_name,
+                    "messages": messages,
+                    "temperature": 0.2
+                });
+                if let Ok(retry_resp) = client
+                    .post(&endpoint)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&payload_no_tools)
+                    .send()
+                    .await
+                {
+                    if retry_resp.status().is_success() {
+                        resp = retry_resp;
+                    } else {
+                        let err_text = resp.text().await.unwrap_or_default();
+                        return Err(format!("AI API Error: {}", err_text));
+                    }
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    return Err(format!("AI API Error: {}", err_text));
+                }
             }
 
             let resp_json: serde_json::Value = resp
@@ -1679,14 +1725,14 @@ TOOLS TERSEDIA:
                 }));
 
                 let summary_payload = serde_json::json!({
-                    "model": config.model_name,
+                    "model": model_name,
                     "messages": messages,
                     "temperature": 0.2
                 });
 
                 if let Ok(sum_resp) = client
                     .post(&endpoint)
-                    .header("Authorization", format!("Bearer {}", config.openai_api_key))
+                    .header("Authorization", format!("Bearer {}", api_key))
                     .header("Content-Type", "application/json")
                     .json(&summary_payload)
                     .send()

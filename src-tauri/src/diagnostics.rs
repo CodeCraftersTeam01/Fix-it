@@ -125,6 +125,75 @@ impl DiagnosticsParser {
         Some(snippet.trim_end().to_string())
     }
 
+    /// Find an ancestor file (like Cargo.toml, package.json, etc.)
+    pub fn find_ancestor_file(start: &Path, file_name: &str) -> Option<PathBuf> {
+        let mut curr = start.parent();
+        while let Some(dir) = curr {
+            let candidate = dir.join(file_name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+            curr = dir.parent();
+        }
+        None
+    }
+
+    /// Extract project root name for multi-IDE and multi-workspace distinction
+    pub fn extract_project_name(path: &Path) -> Option<String> {
+        let mut curr = path.parent();
+        while let Some(dir) = curr {
+            if dir.join("Cargo.toml").exists()
+                || dir.join("package.json").exists()
+                || dir.join("composer.json").exists()
+                || dir.join(".git").exists()
+            {
+                return dir.file_name().map(|f| f.to_string_lossy().to_string());
+            }
+            curr = dir.parent();
+        }
+        path.parent()
+            .and_then(|p| p.file_name())
+            .map(|f| f.to_string_lossy().to_string())
+    }
+
+    /// Find typescript compiler library from project, IDE app bundles, or global node_modules
+    pub fn find_typescript_lib(start_path: &Path) -> Option<PathBuf> {
+        // 1. Walk up from project node_modules
+        let mut curr = start_path.parent();
+        while let Some(dir) = curr {
+            let candidate = dir.join("node_modules").join("typescript").join("lib").join("typescript.js");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+            curr = dir.parent();
+        }
+
+        // 2. Antigravity IDE built-in typescript
+        let ag_candidate = PathBuf::from("/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/node_modules/typescript/lib/typescript.js");
+        if ag_candidate.exists() {
+            return Some(ag_candidate);
+        }
+
+        let ag2_candidate = PathBuf::from("/Applications/Antigravity.app/Contents/Resources/app/extensions/node_modules/typescript/lib/typescript.js");
+        if ag2_candidate.exists() {
+            return Some(ag2_candidate);
+        }
+
+        // 3. VS Code built-in typescript
+        let vscode_candidate = PathBuf::from("/Applications/Visual Studio Code.app/Contents/Resources/app/extensions/node_modules/typescript/lib/typescript.js");
+        if vscode_candidate.exists() {
+            return Some(vscode_candidate);
+        }
+
+        // 4. Cursor built-in typescript
+        let cursor_candidate = PathBuf::from("/Applications/Cursor.app/Contents/Resources/app/extensions/node_modules/typescript/lib/typescript.js");
+        if cursor_candidate.exists() {
+            return Some(cursor_candidate);
+        }
+
+        None
+    }
+
     /// Find a binary in local node_modules/.bin by walking up parent directories, or fallback to PATH
     pub fn find_local_bin(start_path: &Path, bin_name: &str) -> Option<PathBuf> {
         let mut curr = start_path.parent();
@@ -155,6 +224,7 @@ impl DiagnosticsParser {
             None => return InspectionResult::Unsupported,
         };
         let path_str = path.to_string_lossy().to_string();
+        let proj_name = Self::extract_project_name(path);
 
         match ext.as_str() {
             "php" => {
@@ -167,6 +237,7 @@ impl DiagnosticsParser {
                         if let Some(mut err) = Self::parse_log_or_terminal_output(&full_output) {
                             err.snippet = Self::extract_snippet(path, err.line_number);
                             err.file_path = path_str;
+                            err.project_name = proj_name;
                             return InspectionResult::Error(err);
                         }
                     } else {
@@ -183,6 +254,7 @@ impl DiagnosticsParser {
                         if let Some(mut err) = Self::parse_log_or_terminal_output(&stderr) {
                             err.snippet = Self::extract_snippet(path, err.line_number);
                             err.file_path = path_str;
+                            err.project_name = proj_name;
                             return InspectionResult::Error(err);
                         }
                     } else {
@@ -192,7 +264,34 @@ impl DiagnosticsParser {
                 InspectionResult::Unsupported
             }
             "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" => {
-                // 1. Try oxlint if available (super fast ~5-20ms rust linter supporting JS/JSX/TS/TSX)
+                // 1. Try esbuild if available (ultra-fast 5-15ms parser for TS/TSX/JSX/JS)
+                if let Some(esbuild_bin) = Self::find_local_bin(path, "esbuild") {
+                    if let Ok(out) = std::process::Command::new(&esbuild_bin)
+                        .args([&path_str, "--outfile=/dev/null"])
+                        .output()
+                    {
+                        if !out.status.success() {
+                            let stderr = String::from_utf8_lossy(&out.stderr);
+                            let esbuild_re = Regex::new(r"(?s)✘\s+\[ERROR\]\s+(.*?)\n\s+.*?:(\d+):(\d+):").ok();
+                            if let Some(caps) = esbuild_re.and_then(|re| re.captures(&stderr)) {
+                                let msg = caps.get(1).map_or("Syntax error", |m| m.as_str()).trim().to_string();
+                                let line = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok());
+                                return InspectionResult::Error(CodeError {
+                                    file_path: path_str,
+                                    line_number: line,
+                                    error_type: "SyntaxError".to_string(),
+                                    raw_message: msg,
+                                    snippet: Self::extract_snippet(path, line),
+                                    project_name: proj_name,
+                                });
+                            }
+                        } else {
+                            return InspectionResult::Valid;
+                        }
+                    }
+                }
+
+                // 2. Try oxlint if available (super fast rust linter supporting JS/JSX/TS/TSX)
                 if let Some(oxlint_bin) = Self::find_local_bin(path, "oxlint") {
                     if let Ok(out) = std::process::Command::new(&oxlint_bin)
                         .args(["-f", "json", "-D", "correctness", "-D", "no-undef", &path_str])
@@ -201,7 +300,6 @@ impl DiagnosticsParser {
                         let stdout = String::from_utf8_lossy(&out.stdout);
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
                             if let Some(diags) = v.get("diagnostics").and_then(|d| d.as_array()) {
-                                // Find critical error diagnostics (prefer syntax/undef errors over unused vars)
                                 let candidate = diags.iter().find(|d| {
                                     let sev = d.get("severity").and_then(|s| s.as_str()).unwrap_or("");
                                     let code = d.get("code").and_then(|c| c.as_str()).unwrap_or("");
@@ -232,12 +330,12 @@ impl DiagnosticsParser {
                                     };
 
                                     return InspectionResult::Error(CodeError {
-                                        file_path: path_str.clone(),
+                                        file_path: path_str,
                                         line_number: line,
                                         error_type,
                                         raw_message: msg,
                                         snippet: Self::extract_snippet(path, line),
-                                        project_name: None,
+                                        project_name: proj_name,
                                     });
                                 } else {
                                     return InspectionResult::Valid;
@@ -247,7 +345,57 @@ impl DiagnosticsParser {
                     }
                 }
 
-                // 2. Fallback to node -c for plain JavaScript
+                // 3. Try TypeScript AST parser via Node.js
+                if let Some(ts_lib) = Self::find_typescript_lib(path) {
+                    let ts_script = r#"
+const ts = require(process.argv[1]);
+const fs = require('fs');
+const fp = process.argv[2];
+try {
+  const code = fs.readFileSync(fp, 'utf8');
+  const isTsx = fp.endsWith('.tsx') || fp.endsWith('.jsx');
+  const kind = fp.endsWith('.tsx') ? ts.ScriptKind.TSX : (fp.endsWith('.jsx') ? ts.ScriptKind.JSX : ts.ScriptKind.TS);
+  const sf = ts.createSourceFile(fp, code, ts.ScriptTarget.Latest, true, kind);
+  if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
+    const d = sf.parseDiagnostics[0];
+    const pos = sf.getLineAndCharacterOfPosition(d.start);
+    console.log(JSON.stringify({
+      error: ts.flattenDiagnosticMessageText(d.messageText, ' '),
+      line: pos.line + 1
+    }));
+    process.exit(1);
+  }
+  process.exit(0);
+} catch (e) {
+  process.exit(0);
+}
+"#;
+                    if let Ok(out) = std::process::Command::new("node")
+                        .args(["-e", ts_script, &ts_lib.to_string_lossy(), &path_str])
+                        .output()
+                    {
+                        if !out.status.success() {
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                                if let Some(err_text) = v.get("error").and_then(|s| s.as_str()) {
+                                    let line = v.get("line").and_then(|l| l.as_u64()).map(|l| l as usize);
+                                    return InspectionResult::Error(CodeError {
+                                        file_path: path_str,
+                                        line_number: line,
+                                        error_type: "SyntaxError".to_string(),
+                                        raw_message: err_text.to_string(),
+                                        snippet: Self::extract_snippet(path, line),
+                                        project_name: proj_name,
+                                    });
+                                }
+                            }
+                        } else {
+                            return InspectionResult::Valid;
+                        }
+                    }
+                }
+
+                // 4. Fallback to node -c for plain JavaScript
                 if matches!(ext.as_str(), "js" | "mjs" | "cjs") {
                     if let Ok(out) = std::process::Command::new("node").args(["-c", &path_str]).output() {
                         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -255,11 +403,98 @@ impl DiagnosticsParser {
                             if let Some(mut err) = Self::parse_log_or_terminal_output(&stderr) {
                                 err.snippet = Self::extract_snippet(path, err.line_number);
                                 err.file_path = path_str;
+                                err.project_name = proj_name;
                                 return InspectionResult::Error(err);
                             }
                         } else {
                             return InspectionResult::Valid;
                         }
+                    }
+                }
+
+                InspectionResult::Unsupported
+            }
+            "rs" => {
+                // 1. If inside a Cargo project, check with cargo check --message-format=json
+                if let Some(cargo_toml) = Self::find_ancestor_file(path, "Cargo.toml") {
+                    if let Ok(out) = std::process::Command::new("cargo")
+                        .args(["check", "--message-format=json", "--manifest-path", &cargo_toml.to_string_lossy()])
+                        .output()
+                    {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        for line in stdout.lines() {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                                if val.get("reason").and_then(|r| r.as_str()) == Some("compiler-message") {
+                                    if let Some(msg) = val.get("message") {
+                                        if msg.get("level").and_then(|l| l.as_str()) == Some("error") {
+                                            let err_msg = msg.get("message").and_then(|m| m.as_str()).unwrap_or("Compilation error").to_string();
+                                            let mut line_no = None;
+                                            let mut is_matched = false;
+
+                                            if let Some(spans) = msg.get("spans").and_then(|s| s.as_array()) {
+                                                if let Some(span) = spans.iter().find(|s| s.get("is_primary").and_then(|p| p.as_bool()).unwrap_or(false)) {
+                                                    line_no = span.get("line_start").and_then(|l| l.as_u64()).map(|l| l as usize);
+                                                    if let Some(fname) = span.get("file_name").and_then(|f| f.as_str()) {
+                                                        if path_str.ends_with(fname) || fname.ends_with(&path_str) {
+                                                            is_matched = true;
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if is_matched {
+                                                return InspectionResult::Error(CodeError {
+                                                    file_path: path_str,
+                                                    line_number: line_no,
+                                                    error_type: "RustCompileError".to_string(),
+                                                    raw_message: err_msg,
+                                                    snippet: Self::extract_snippet(path, line_no),
+                                                    project_name: proj_name,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if out.status.success() {
+                            return InspectionResult::Valid;
+                        }
+                    }
+                }
+
+                // 2. Standalone rustc compiler check
+                if let Ok(out) = std::process::Command::new("rustc")
+                    .args(["--crate-type=lib", "--error-format=json", "--emit=metadata", "-o", "/dev/null", &path_str])
+                    .output()
+                {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    for line in stderr.lines() {
+                        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) {
+                            if msg.get("level").and_then(|l| l.as_str()) == Some("error") {
+                                let err_msg = msg.get("message").and_then(|m| m.as_str()).unwrap_or("Rust error").to_string();
+                                if err_msg.starts_with("aborting due to") {
+                                    continue;
+                                }
+                                let mut line_no = None;
+                                if let Some(spans) = msg.get("spans").and_then(|s| s.as_array()) {
+                                    if let Some(span) = spans.iter().find(|s| s.get("is_primary").and_then(|p| p.as_bool()).unwrap_or(false)) {
+                                        line_no = span.get("line_start").and_then(|l| l.as_u64()).map(|l| l as usize);
+                                    }
+                                }
+                                return InspectionResult::Error(CodeError {
+                                    file_path: path_str,
+                                    line_number: line_no,
+                                    error_type: "RustCompileError".to_string(),
+                                    raw_message: err_msg,
+                                    snippet: Self::extract_snippet(path, line_no),
+                                    project_name: proj_name,
+                                });
+                            }
+                        }
+                    }
+                    if out.status.success() {
+                        return InspectionResult::Valid;
                     }
                 }
 
@@ -274,7 +509,7 @@ impl DiagnosticsParser {
                             error_type: "JsonSyntaxError".to_string(),
                             raw_message: e.to_string(),
                             snippet: Self::extract_snippet(path, Some(e.line())),
-                            project_name: None,
+                            project_name: proj_name,
                         });
                     } else {
                         return InspectionResult::Valid;

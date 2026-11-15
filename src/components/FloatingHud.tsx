@@ -447,6 +447,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       ) : (
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
                       )}
+                      {item.error.project_name && (
+                        <span className="text-[9.5px] px-1 py-0.5 rounded bg-white/10 opacity-70 font-mono">
+                          [{item.error.project_name}]
+                        </span>
+                      )}
                       <span className="truncate max-w-[120px] font-medium">{fileName}</span>
                       {item.error.line_number && (
                         <span className="text-[10px] opacity-60 font-mono">
@@ -912,6 +917,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       {/* Bottom Capsule Bar (Exact match to "Ask Siri" pill in screenshot) */}
       <AskBar
         onSendMessage={onSendMessage}
+        onActionClick={onCaptureScreen}
         disabled={isLoading}
         placeholder="Tanya FixIt apa saja..."
       />

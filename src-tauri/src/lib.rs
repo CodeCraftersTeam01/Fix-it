@@ -37,6 +37,7 @@ pub struct AppState {
     pub flood_guard: Arc<Mutex<flood_guard::FloodGuard>>,
     pub active_errors: Arc<Mutex<HashMap<String, ActiveErrorRecord>>>,
     pub agent_active_repairs: Arc<Mutex<HashMap<String, std::time::Instant>>>,
+    pub watcher: Arc<Mutex<Option<Arc<SmartIdleWatcher>>>>,
 }
 
 impl AppState {
@@ -46,6 +47,7 @@ impl AppState {
             flood_guard: Arc::new(Mutex::new(flood_guard::FloodGuard::new())),
             active_errors: Arc::new(Mutex::new(HashMap::new())),
             agent_active_repairs: Arc::new(Mutex::new(HashMap::new())),
+            watcher: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -55,6 +57,7 @@ impl AppState {
             flood_guard: Arc::new(Mutex::new(flood_guard)),
             active_errors: Arc::new(Mutex::new(HashMap::new())),
             agent_active_repairs: Arc::new(Mutex::new(HashMap::new())),
+            watcher: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -201,9 +204,13 @@ pub fn init_env_path() {
     let mut paths = vec![
         "/opt/homebrew/bin".to_string(),
         "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
     ];
     if let Some(home) = dirs::home_dir() {
+        paths.push(format!("{}/.cargo/bin", home.display()));
         paths.push(format!("{}/.local/bin", home.display()));
+        paths.push(format!("{}/.bun/bin", home.display()));
         paths.push(format!("{}/Library/Application Support/Herd/bin", home.display()));
     }
     if let Ok(current_path) = std::env::var("PATH") {
@@ -531,6 +538,14 @@ pub mod commands {
         state: tauri::State<'_, AppState>,
     ) -> Result<(), String> {
         new_config.save()?;
+        {
+            let w_guard = state.watcher.lock().await;
+            if let Some(ref w) = *w_guard {
+                for p_str in &new_config.watched_paths {
+                    w.add_watch_path(&std::path::PathBuf::from(p_str));
+                }
+            }
+        }
         let mut conf = state.config.lock().await;
         *conf = new_config;
         Ok(())
@@ -1091,13 +1106,29 @@ pub fn setup_background_service(
 ) {
     let app_handle = app.clone();
     let idle_ms = config.idle_delay_ms;
-    let paths: Vec<PathBuf> = config.watched_paths.iter().map(PathBuf::from).collect();
+    let mut paths: Vec<PathBuf> = config.watched_paths.iter().map(PathBuf::from).collect();
 
+    // Auto-discover open IDE workspaces if watched_paths is empty
     if paths.is_empty() {
-        return;
+        for p_str in AppConfig::discover_ide_workspaces() {
+            let pb = PathBuf::from(p_str);
+            if pb.exists() && !paths.contains(&pb) {
+                paths.push(pb);
+            }
+        }
     }
 
-    let watcher = SmartIdleWatcher::new(idle_ms);
+    let watcher_arc = Arc::new(SmartIdleWatcher::new(idle_ms));
+    {
+        let state: tauri::State<AppState> = app_handle.state();
+        let state_clone = state.inner().clone();
+        let w_arc = watcher_arc.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut guard = state_clone.watcher.lock().await;
+            *guard = Some(w_arc);
+        });
+    }
+
     let app_for_writing = app_handle.clone();
     let app_for_idle = app_handle.clone();
     let app_for_log = app_handle.clone();
@@ -1105,7 +1136,33 @@ pub fn setup_background_service(
     let log_tailer = Arc::new(std::sync::Mutex::new(runtime_log_watcher::LogTailer::new()));
     let watched_paths_clone = paths.clone();
 
-    let _ = watcher.watch_paths(
+    // Spawn dynamic background loop that periodically scans for newly opened IDE tabs/windows
+    let watcher_for_sync = watcher_arc.clone();
+    let app_for_sync = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+            let discovered = AppConfig::discover_ide_workspaces();
+            let mut newly_added = Vec::new();
+            for p_str in discovered {
+                let p = PathBuf::from(&p_str);
+                if watcher_for_sync.add_watch_path(&p) {
+                    newly_added.push(p_str);
+                }
+            }
+            if !newly_added.is_empty() {
+                let state: tauri::State<AppState> = app_for_sync.state();
+                let mut conf = state.config.lock().await;
+                for p in newly_added {
+                    if !conf.watched_paths.contains(&p) {
+                        conf.watched_paths.push(p);
+                    }
+                }
+            }
+        }
+    });
+
+    let _ = watcher_arc.watch_paths(
         paths,
         // 1. Real-time writing callback
         move |writing_file| {

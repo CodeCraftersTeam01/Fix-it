@@ -65,6 +65,30 @@ impl AppConfig {
         base.join("fixit").join("config.json")
     }
 
+    pub fn get_effective_llm_config(&self) -> (String, String, String) {
+        for cp in &self.custom_providers {
+            if cp.id == self.active_provider {
+                let key = cp.api_keys.first().cloned().unwrap_or_default();
+                let model = if !cp.active_model.trim().is_empty() {
+                    cp.active_model.clone()
+                } else if !self.model_name.trim().is_empty() {
+                    self.model_name.clone()
+                } else {
+                    cp.available_models
+                        .first()
+                        .map(|m| m.id.clone())
+                        .unwrap_or_else(|| "default".to_string())
+                };
+                return (cp.base_url.clone(), key, model);
+            }
+        }
+        (
+            self.openai_base_url.clone(),
+            self.openai_api_key.clone(),
+            self.model_name.clone(),
+        )
+    }
+
     pub fn percent_decode(s: &str) -> String {
         let mut bytes = Vec::new();
         let mut chars = s.bytes();
@@ -88,20 +112,44 @@ impl AppConfig {
             let herd = home.join("Herd");
             if herd.exists() {
                 paths.insert(herd.to_string_lossy().to_string());
+                if let Ok(entries) = fs::read_dir(&herd) {
+                    for entry in entries.flatten() {
+                        if let Ok(file_type) = entry.file_type() {
+                            if file_type.is_dir() {
+                                paths.insert(entry.path().to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
             }
 
-            let ides = ["Antigravity IDE", "Code", "Cursor", "Windsurf", "VSCodium", "Kiro"];
+            let ides = [
+                "Antigravity IDE",
+                "Antigravity",
+                "Code",
+                "Code - Insiders",
+                "Cursor",
+                "Windsurf",
+                "VSCodium",
+                "Kiro",
+                "Zed",
+                "Sublime Text",
+            ];
             let app_support = home.join("Library").join("Application Support");
 
             for ide in ides {
-                let ws_storage = app_support.join(ide).join("User").join("workspaceStorage");
+                let ide_dir = app_support.join(ide);
+                let ws_storage = ide_dir.join("User").join("workspaceStorage");
+
+                // 1. Check workspaceStorage for open tabs & windows
                 if ws_storage.exists() {
                     if let Ok(entries) = fs::read_dir(ws_storage) {
                         for entry in entries.flatten() {
                             let ws_json = entry.path().join("workspace.json");
                             if ws_json.exists() {
-                                if let Ok(content) = fs::read_to_string(ws_json) {
+                                if let Ok(content) = fs::read_to_string(&ws_json) {
                                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        // Case A: Single folder
                                         if let Some(folder_uri) = val["folder"].as_str() {
                                             if let Some(stripped) = folder_uri.strip_prefix("file://") {
                                                 let decoded = Self::percent_decode(stripped);
@@ -109,6 +157,59 @@ impl AppConfig {
                                                 if p.exists() {
                                                     paths.insert(p.to_string_lossy().to_string());
                                                 }
+                                            }
+                                        }
+                                        // Case B: Multi-root workspace file (.code-workspace)
+                                        if let Some(ws_uri) = val["workspace"].as_str() {
+                                            if let Some(stripped) = ws_uri.strip_prefix("file://") {
+                                                let decoded = Self::percent_decode(stripped);
+                                                let ws_path = PathBuf::from(&decoded);
+                                                if ws_path.exists() {
+                                                    if let Ok(ws_content) = fs::read_to_string(&ws_path) {
+                                                        if let Ok(ws_val) = serde_json::from_str::<serde_json::Value>(&ws_content) {
+                                                            if let Some(folders) = ws_val["folders"].as_array() {
+                                                                let ws_dir = ws_path.parent().unwrap_or(&ws_path);
+                                                                for f in folders {
+                                                                    if let Some(rel) = f["path"].as_str() {
+                                                                        let folder_path = ws_dir.join(rel);
+                                                                        if folder_path.exists() {
+                                                                            paths.insert(folder_path.to_string_lossy().to_string());
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Check globalStorage/state.vscdb for active & recently opened multi-IDE tabs
+                let vscdb = ide_dir.join("User").join("globalStorage").join("state.vscdb");
+                if vscdb.exists() {
+                    if let Ok(out) = std::process::Command::new("sqlite3")
+                        .args([
+                            &vscdb.to_string_lossy().to_string(),
+                            "SELECT value FROM ItemTable WHERE key = 'history.recentlyOpenedPathsList'",
+                        ])
+                        .output()
+                    {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                            if let Some(entries) = v.get("entries").and_then(|e| e.as_array()) {
+                                for entry in entries {
+                                    if let Some(f_uri) = entry.get("folderUri").and_then(|u| u.as_str()) {
+                                        if let Some(stripped) = f_uri.strip_prefix("file://") {
+                                            let decoded = Self::percent_decode(stripped);
+                                            let p = PathBuf::from(decoded);
+                                            if p.exists() {
+                                                paths.insert(p.to_string_lossy().to_string());
                                             }
                                         }
                                     }

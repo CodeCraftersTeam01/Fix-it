@@ -25,4 +25,26 @@ describe("AskBar", () => {
 
     expect(handleSend).not.toHaveBeenCalled();
   });
+
+  it("submits message on Enter keypress", () => {
+    const handleSend = vi.fn();
+    render(<AskBar onSendMessage={handleSend} placeholder="Ask FixIt" />);
+    
+    const input = screen.getByPlaceholderText("Ask FixIt");
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    expect(handleSend).toHaveBeenCalledWith("hello");
+  });
+
+  it("triggers onActionClick when plus button is clicked", () => {
+    const handleSend = vi.fn();
+    const handleAction = vi.fn();
+    render(<AskBar onSendMessage={handleSend} onActionClick={handleAction} />);
+    
+    const actionBtn = screen.getByTitle("Tangkapan Layar / Opsi");
+    fireEvent.click(actionBtn);
+
+    expect(handleAction).toHaveBeenCalled();
+  });
 });

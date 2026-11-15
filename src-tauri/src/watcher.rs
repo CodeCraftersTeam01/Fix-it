@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 pub struct SmartIdleWatcher {
     idle_delay: Duration,
     state: Arc<(Mutex<Option<(PathBuf, Instant)>>, Condvar)>,
+    watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
+    watched_set: Arc<Mutex<std::collections::HashSet<PathBuf>>>,
 }
 
 impl SmartIdleWatcher {
@@ -14,7 +16,30 @@ impl SmartIdleWatcher {
         Self {
             idle_delay: Duration::from_millis(idle_delay_ms),
             state: Arc::new((Mutex::new(None), Condvar::new())),
+            watcher: Arc::new(Mutex::new(None)),
+            watched_set: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
+    }
+
+    /// Dynamically add a new path to the active file watcher without restarting
+    pub fn add_watch_path(&self, path: &std::path::Path) -> bool {
+        if !path.exists() {
+            return false;
+        }
+        if let Ok(mut set) = self.watched_set.lock() {
+            if set.contains(path) {
+                return false;
+            }
+            if let Ok(mut guard) = self.watcher.lock() {
+                if let Some(ref mut w) = *guard {
+                    if w.watch(path, RecursiveMode::Recursive).is_ok() {
+                        set.insert(path.to_path_buf());
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Starts watching paths with smart idle debounce, real-time writing detection, and log change handling
@@ -34,10 +59,18 @@ impl SmartIdleWatcher {
         let mut watcher = RecommendedWatcher::new(tx, notify::Config::default())
             .map_err(|e| format!("Failed to create watcher: {}", e))?;
 
-        for p in &paths {
-            if p.exists() {
-                let _ = watcher.watch(p, RecursiveMode::Recursive);
+        if let Ok(mut set) = self.watched_set.lock() {
+            for p in &paths {
+                if p.exists() {
+                    let _ = watcher.watch(p, RecursiveMode::Recursive);
+                    set.insert(p.clone());
+                }
             }
+        }
+
+        let watcher_storage = Arc::clone(&self.watcher);
+        if let Ok(mut guard) = watcher_storage.lock() {
+            *guard = Some(watcher);
         }
 
         let state = Arc::clone(&self.state);
@@ -48,7 +81,7 @@ impl SmartIdleWatcher {
 
         // Background worker thread that collects file change events and debounces typing
         std::thread::spawn(move || {
-            let _watcher = watcher; // Keep watcher alive in this thread
+            let _keep_alive = watcher_storage; // Keep watcher reference alive in this thread
             while let Ok(event_res) = rx.recv() {
                 if let Ok(Event { paths, .. }) = event_res {
                     for path in paths {
@@ -57,6 +90,9 @@ impl SmartIdleWatcher {
                         if path_str.contains(".git")
                             || path_str.contains("node_modules")
                             || path_str.contains("/target/")
+                            || path_str.contains("/dist/")
+                            || path_str.contains("/.next/")
+                            || path_str.contains("/.nuxt/")
                             || path_str.contains(".tmp")
                             || path_str.ends_with('~')
                             || path_str.ends_with(".swp")
@@ -74,10 +110,13 @@ impl SmartIdleWatcher {
                             continue;
                         }
 
-                        // Only watch supported code files
+                        // Only watch supported code files (PHP, Python, JS/TS/JSX/TSX, Rust, Go, Java, C/C++, JSON)
                         let is_code = path.extension().map_or(false, |ext| {
                             let e = ext.to_string_lossy().to_lowercase();
-                            matches!(e.as_str(), "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "json")
+                            matches!(
+                                e.as_str(),
+                                "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "json" | "rs" | "go" | "java" | "c" | "cpp"
+                            )
                         });
                         if !is_code {
                             continue;

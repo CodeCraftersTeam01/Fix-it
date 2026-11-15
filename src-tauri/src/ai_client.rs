@@ -40,11 +40,12 @@ impl AiClient {
         error: &CodeError,
         config: &AppConfig,
     ) -> Result<FixExplanation, String> {
-        if config.openai_api_key.trim().is_empty() {
+        let (base_url, api_key, model_name) = config.get_effective_llm_config();
+        if api_key.trim().is_empty() {
             // Provide a sensible offline fallback response if API key is not configured yet
             return Ok(FixExplanation {
                 summary: format!("Terdeteksi {} pada baris {:?}", error.error_type, error.line_number.unwrap_or(0)),
-                why_it_happened: format!("Pesan error: {}. (Silakan masukkan OpenAI API Key di pengaturan FixIt untuk analisis AI mendalam)", error.raw_message),
+                why_it_happened: format!("Pesan error: {}. (Silakan masukkan API Key di pengaturan FixIt untuk analisis AI mendalam)", error.raw_message),
                 steps: vec![
                     "Periksa kembali sintaks pada baris terkait.".to_string(),
                     "Pastikan semua variabel dan fungsi telah dideklarasikan.".to_string(),
@@ -85,10 +86,10 @@ Output HARUS berformat JSON valid dengan struktur:
             error.snippet.as_deref().unwrap_or("(berkas kosong atau tidak terbaca)")
         );
 
-        let endpoint = format!("{}/chat/completions", config.openai_base_url.trim_end_matches('/'));
+        let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
         let request_body = ChatCompletionRequest {
-            model: config.model_name.clone(),
+            model: model_name.clone(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
@@ -105,7 +106,7 @@ Output HARUS berformat JSON valid dengan struktur:
         let client = reqwest::Client::new();
         let resp = client
             .post(&endpoint)
-            .header("Authorization", format!("Bearer {}", config.openai_api_key))
+            .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
