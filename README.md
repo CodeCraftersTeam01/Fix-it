@@ -1,8 +1,7 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./public/logo.png">
-    <img src="./public/logo.png" alt="FixIt Logo" width="220" />
-  </picture>
+  <a href="https://github.com/CodeCraftersTeam01/Fix-it">
+    <img src="./public/logo_white.png" alt="FixIt Logo" width="160" />
+  </a>
 </p>
 
 <h1 align="center">FixIt</h1>
