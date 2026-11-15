@@ -1,4 +1,4 @@
-name: Build Windows App
+name: Build App (Windows & macOS)
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   build-windows:
+    name: Build Windows (x64)
     runs-on: windows-latest
 
     steps:
@@ -37,3 +38,34 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/fixit.exe
+
+  build-macos:
+    name: Build macOS (Apple Silicon & Intel)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Build macOS App & DMG
+        run: npx tauri build
+
+      - name: Upload macOS App & DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: FixIt-macOS-Bundle
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
