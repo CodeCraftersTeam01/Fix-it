@@ -14,6 +14,7 @@ pub struct AgentStepEvent {
     pub message: Option<String>,
     pub output: Option<String>,
     pub timestamp: u64,
+    pub file_path: Option<String>,
 }
 
 pub struct AgentEngine;
@@ -905,6 +906,7 @@ impl AgentEngine {
         step_count: usize,
         app_handle: Option<&tauri::AppHandle>,
         messages: &mut Vec<serde_json::Value>,
+        target_file: Option<&str>,
     ) {
         for (call_idx, tool_call) in tool_calls.iter().enumerate() {
             let call_id = tool_call["id"].as_str().unwrap_or("call_1");
@@ -927,6 +929,7 @@ impl AgentEngine {
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64,
+                        file_path: target_file.map(|s| s.to_string()),
                     },
                 );
             }
@@ -952,6 +955,7 @@ impl AgentEngine {
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64,
+                        file_path: target_file.map(|s| s.to_string()),
                     },
                 );
             }
@@ -1184,6 +1188,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64,
+                    file_path: Some(error.file_path.clone()),
                 },
             );
         }
@@ -1270,6 +1275,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as u64,
+                            file_path: Some(error.file_path.clone()),
                         },
                     );
                 }
@@ -1299,6 +1305,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                         step_count,
                         app_handle,
                         &mut messages,
+                        Some(&error.file_path),
                     )
                     .await;
 
@@ -1321,10 +1328,34 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                                     }
                                 }
                                 crate::diagnostics::InspectionResult::Valid => {
-                                    messages.push(serde_json::json!({
-                                        "role": "user",
-                                        "content": "Pemeriksaan sintaks berhasil! Berkas telah diverifikasi valid dan bebas dari error sintaks. Sekarang berikan ringkasan perbaikan singkat dan cerdas dalam bahasa Indonesia untuk siswa."
-                                    }));
+                                    // Berkas sudah terbukti valid & bebas error sintaks!
+                                    // Langsung selesaikan tanpa perlu menunggu roundtrip LLM tambahan yang lama
+                                    let summary = format!(
+                                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas telah diverifikasi valid dan bebas dari error sintaks sehingga aplikasi dapat kembali berjalan dengan normal.",
+                                        error.raw_message
+                                    );
+
+                                    if let Some(app) = app_handle {
+                                        let _ = app.emit(
+                                            "fixit-agent-step",
+                                            AgentStepEvent {
+                                                step: step_count * 1000 + 2,
+                                                step_type: "finish".to_string(),
+                                                tool_name: None,
+                                                tool_args: None,
+                                                result_summary: Some("Perbaikan Selesai".to_string()),
+                                                message: Some("Perbaikan Selesai".to_string()),
+                                                output: Some(summary.clone()),
+                                                timestamp: std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap_or_default()
+                                                    .as_millis() as u64,
+                                                file_path: Some(error.file_path.clone()),
+                                            },
+                                        );
+                                    }
+
+                                    return Ok(summary);
                                 }
                                 _ => {}
                             }
@@ -1356,6 +1387,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as u64,
+                            file_path: Some(error.file_path.clone()),
                         },
                     );
                 }
@@ -1436,6 +1468,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64,
+                        file_path: Some(error.file_path.clone()),
                     },
                 );
             }
@@ -1611,6 +1644,7 @@ TOOLS TERSEDIA:
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as u64,
+                            file_path: active_error.as_ref().map(|e| e.file_path.clone()),
                         },
                     );
                 }
@@ -1629,6 +1663,7 @@ TOOLS TERSEDIA:
                         step_count,
                         app_handle,
                         &mut messages,
+                        active_error.as_ref().map(|e| e.file_path.as_str()),
                     )
                     .await;
                     continue;
@@ -1689,6 +1724,7 @@ TOOLS TERSEDIA:
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64,
+                        file_path: active_error.as_ref().map(|e| e.file_path.clone()),
                     },
                 );
             }

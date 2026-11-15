@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Brain,
   ArrowDown,
+  Check,
 } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { ErrorGuideCard } from "./ErrorGuideCard";
@@ -211,7 +212,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     return parts[parts.length - 1] || filePath;
   };
 
-  const isRepairMode = isAgentRunning || parsedSteps.length > 0;
+  const isRepairMode = isAgentRunning || parsedSteps.length > 0 || !!activeItem?.is_resolved;
   const isAtBottomRef = useRef(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
@@ -396,7 +397,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           <div className="max-w-4xl mx-auto w-full space-y-3">
             <div className="flex items-center justify-between text-[11px] text-white/40 pb-0.5">
               <span className="flex items-center gap-1.5 font-medium text-white/80">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    effectiveActiveErrors.length > 0 &&
+                    effectiveActiveErrors.every((e) => e.is_resolved)
+                      ? "bg-emerald-400"
+                      : "bg-red-400"
+                  }`}
+                />
                 {effectiveActiveErrors.length > 1
                   ? `${effectiveActiveErrors.length} Error Terdeteksi`
                   : "Error Terdeteksi"}
@@ -417,6 +425,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
                 {effectiveActiveErrors.map((item, idx) => {
                   const isActive = idx === activeIndex;
+                  const isResolved = !!item.is_resolved;
                   const fileName = getFileName(item.error.file_path);
                   return (
                     <button
@@ -425,10 +434,19 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       onClick={() => onSelectError?.(idx)}
                       className={`shrink-0 px-2.5 py-1 rounded-xl text-[11px] font-sans flex items-center gap-1.5 transition border ${
                         isActive
-                          ? "bg-white/15 text-white border-white/20 shadow-sm"
+                          ? isResolved
+                            ? "bg-emerald-500/20 text-emerald-100 border-emerald-500/40 shadow-sm"
+                            : "bg-white/15 text-white border-white/20 shadow-sm"
+                          : isResolved
+                          ? "bg-emerald-500/10 text-emerald-300/80 hover:text-emerald-200 border-emerald-500/20 hover:border-emerald-500/35"
                           : "bg-white/[0.04] text-white/50 hover:text-white/80 border-transparent hover:border-white/10"
                       }`}
                     >
+                      {isResolved ? (
+                        <Check size={12} className="text-emerald-400 stroke-[2.5] shrink-0" />
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                      )}
                       <span className="truncate max-w-[120px] font-medium">{fileName}</span>
                       {item.error.line_number && (
                         <span className="text-[10px] opacity-60 font-mono">
@@ -455,12 +473,30 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               /* Mode Perbaikan: Minimalist, Cozy, Clean - Zero Card Soup (Sesuai Antislop & Design Taste) */
               <div className="space-y-1.5 pb-1 select-none">
                 <div className="flex items-center gap-2 py-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-                  <span className="px-2 py-0.5 rounded-md bg-white/[0.06] font-mono text-[11.5px] text-white/80 font-medium">
-                    {getFileName(activeError.file_path)}{activeError.line_number ? `:${activeError.line_number}` : ""}
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      activeItem?.is_resolved ? "bg-emerald-400" : "bg-rose-400"
+                    }`}
+                  />
+                  <span
+                    className={`px-2 py-0.5 rounded-md font-mono text-[11.5px] font-medium flex items-center gap-1.5 ${
+                      activeItem?.is_resolved
+                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25"
+                        : "bg-white/[0.06] text-white/80"
+                    }`}
+                  >
+                    {activeItem?.is_resolved && (
+                      <Check size={11} className="text-emerald-400 stroke-[2.5] shrink-0" />
+                    )}
+                    <span>
+                      {getFileName(activeError.file_path)}
+                      {activeError.line_number ? `:${activeError.line_number}` : ""}
+                    </span>
                   </span>
                   <span className="text-[12.5px] text-white/75 font-medium truncate flex-1">
-                    {activeExplanation?.summary || activeError.raw_message}
+                    {activeItem?.is_resolved
+                      ? "Perbaikan selesai • Kode berhasil diperbaiki"
+                      : activeExplanation?.summary || activeError.raw_message}
                   </span>
                   <button
                     type="button"

@@ -347,4 +347,76 @@ describe("FloatingHud standby reset", () => {
     expect(screen.getByText("Database perlu dibuat dulu dengan mysql.")).toBeTruthy();
     expect(screen.getByText(".env")).toBeTruthy();
   });
+
+  it("renders multiple error tabs with checkmark on resolved items and handles tab switching", () => {
+    const onSelectError = vi.fn();
+    const activeErrors: ActiveErrorItem[] = [
+      {
+        id: "src/pages/Dashboard.jsx",
+        error: {
+          file_path: "src/pages/Dashboard.jsx",
+          line_number: 8,
+          error_type: "SyntaxError",
+          raw_message: "Unexpected token",
+        },
+        explanation: {
+          summary: "Error in Dashboard",
+          why_it_happened: "Reason 1",
+          steps: ["Step 1"],
+        },
+        hit_count: 1,
+        is_looping: false,
+        timestamp: 1,
+        is_resolved: true,
+      },
+      {
+        id: "src/pages/NotFound.jsx",
+        error: {
+          file_path: "src/pages/NotFound.jsx",
+          line_number: 53,
+          error_type: "SyntaxError",
+          raw_message: "Unexpected token ';'",
+        },
+        explanation: {
+          summary: "Error in NotFound",
+          why_it_happened: "Reason 2",
+          steps: ["Step 2"],
+        },
+        hit_count: 1,
+        is_looping: false,
+        timestamp: 2,
+        is_resolved: false,
+      },
+    ];
+
+    render(
+      <FloatingHud
+        activeErrors={activeErrors}
+        selectedErrorIndex={0}
+        onSelectError={onSelectError}
+        messages={[]}
+        agentSteps={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    // Both filenames should appear in the tabs
+    const dashTab = screen.getByText("Dashboard.jsx");
+    const notFoundTab = screen.getByText("NotFound.jsx");
+    expect(dashTab).toBeTruthy();
+    expect(notFoundTab).toBeTruthy();
+
+    // Line numbers should be visible
+    expect(screen.getByText("Line 8")).toBeTruthy();
+    expect(screen.getByText("Line 53")).toBeTruthy();
+
+    // Clicking the second tab calls onSelectError with 1
+    fireEvent.click(notFoundTab);
+    expect(onSelectError).toHaveBeenCalledWith(1);
+
+    // The resolved message text appears for the active resolved item
+    expect(screen.getByText("Perbaikan selesai • Kode berhasil diperbaiki")).toBeTruthy();
+  });
 });

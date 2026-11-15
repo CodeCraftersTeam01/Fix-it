@@ -29,19 +29,26 @@ export function App() {
     line?: number;
     error_type?: string;
   } | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeFileActivity, setActiveFileActivity] = useState<FileActivity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAgentRunning, setIsAgentRunningState] = useState(false);
   const isAgentRunningRef = useRef(false);
+  const selectedErrorIndexRef = useRef(selectedErrorIndex);
+
+  useEffect(() => {
+    selectedErrorIndexRef.current = selectedErrorIndex;
+  }, [selectedErrorIndex]);
+
+  useEffect(() => {
+    isAgentRunningRef.current =
+      isAgentRunning || activeErrors.some((e) => e.is_running);
+  }, [isAgentRunning, activeErrors]);
 
   const setIsAgentRunning = (running: boolean) => {
     isAgentRunningRef.current = running;
     setIsAgentRunningState(running);
   };
-
-  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
 
   const [settings, setSettings] = useState<AppSettings>({
     openai_base_url: "https://api.openai.com/v1",
@@ -73,8 +80,6 @@ export function App() {
       );
       if (remaining.length === 0) {
         setSelectedErrorIndex(0);
-        setAgentSteps([]);
-        setMessages([]);
         setIsAgentRunning(false);
       } else {
         setSelectedErrorIndex((curr) =>
@@ -106,16 +111,11 @@ export function App() {
         await listen<{ file_name: string; line?: number; error_type?: string }>(
           "fixit-error-analyzing",
           (event) => {
-            // Jangan membatalkan sesi agent jika AI agent sedang aktif melakukan perbaikan
             if (isAgentRunningRef.current) {
               return;
             }
             setIsAnalyzing(true);
             setAnalyzingInfo(event.payload);
-            // Bersihkan riwayat steps dan pesan perbaikan dari error sebelumnya
-            setAgentSteps([]);
-            setMessages([]);
-            setIsAgentRunning(false);
           }
         );
         await listen<{
@@ -124,18 +124,12 @@ export function App() {
           hit_count?: number;
           is_looping?: boolean;
         }>("fixit-error-detected", (event) => {
-          // Jangan membatalkan sesi agent jika AI agent sedang aktif melakukan perbaikan
           if (isAgentRunningRef.current) {
             return;
           }
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
           const payload = event.payload;
-
-          // Bersihkan riwayat perbaikan lama agar sesi error baru bersih & fresh
-          setAgentSteps([]);
-          setMessages([]);
-          setIsAgentRunning(false);
 
           setActiveErrors((prev) => {
             const idx = prev.findIndex((item) =>
@@ -151,6 +145,11 @@ export function App() {
                 hit_count: payload.hit_count ?? (updated[idx].hit_count + 1),
                 is_looping: payload.is_looping ?? updated[idx].is_looping,
                 timestamp: Date.now(),
+                // Reset resolution and steps for this re-detected broken error only
+                is_resolved: false,
+                steps: [],
+                messages: [],
+                is_running: false,
               };
               return updated;
             } else {
@@ -164,6 +163,10 @@ export function App() {
                   hit_count: payload.hit_count ?? 1,
                   is_looping: payload.is_looping ?? false,
                   timestamp: Date.now(),
+                  is_resolved: false,
+                  steps: [],
+                  messages: [],
+                  is_running: false,
                 },
               ];
             }
@@ -196,9 +199,15 @@ export function App() {
           setActiveFileActivity(event.payload);
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
-          // Auto-clear active error if student fixed the broken file
           if (event.payload?.file_path) {
-            removeErrorByPath(event.payload.file_path);
+            const validPath = event.payload.file_path;
+            setActiveErrors((prev) =>
+              prev.map((item) =>
+                pathMatches(item.error.file_path, validPath)
+                  ? { ...item, is_resolved: true, is_running: false }
+                  : item
+              )
+            );
           }
         });
         await listen("open-settings", async () => {
@@ -208,8 +217,47 @@ export function App() {
           } catch {}
         });
         await listen<AgentStep>("fixit-agent-step", (event) => {
-          setAgentSteps((prev) => [...prev, event.payload]);
-          if (event.payload.step_type === "finish") {
+          const step = event.payload;
+          const isFinish = step.step_type === "finish";
+
+          setActiveErrors((prev) => {
+            if (prev.length === 0) return prev;
+
+            let targetIdx = -1;
+            // 1. Match by step's explicit file_path
+            if (step.file_path) {
+              targetIdx = prev.findIndex((item) =>
+                pathMatches(item.error.file_path, step.file_path!)
+              );
+            }
+            // 2. Fallback to currently running item
+            if (targetIdx === -1) {
+              targetIdx = prev.findIndex((item) => item.is_running);
+            }
+            // 3. Fallback to active tab index
+            if (targetIdx === -1) {
+              targetIdx = Math.min(
+                Math.max(0, selectedErrorIndexRef.current),
+                prev.length - 1
+              );
+            }
+
+            if (targetIdx === -1) return prev;
+
+            const updated = [...prev];
+            const currItem = updated[targetIdx];
+            const newSteps = [...(currItem.steps || []), step];
+
+            updated[targetIdx] = {
+              ...currItem,
+              steps: newSteps,
+              is_running: !isFinish,
+              is_resolved: isFinish ? true : currItem.is_resolved,
+            };
+            return updated;
+          });
+
+          if (isFinish) {
             setIsAgentRunning(false);
           }
         });
@@ -219,8 +267,6 @@ export function App() {
           setSelectedErrorIndex(0);
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
-          setAgentSteps([]);
-          setMessages([]);
           setIsAgentRunning(false);
         });
       } catch {
@@ -389,8 +435,6 @@ export function App() {
   const handleClearError = async () => {
     setActiveErrors([]);
     setSelectedErrorIndex(0);
-    setAgentSteps([]);
-    setMessages([]);
     setIsAgentRunning(false);
     try {
       const invoke = await getInvoke();
@@ -401,53 +445,97 @@ export function App() {
   };
 
   const handleStartAgenticFix = async () => {
-    if (!currentError || isAgentRunning) return;
+    const currentActive = activeErrors[selectedErrorIndex];
+    if (!currentActive || currentActive.is_running || isAgentRunning) return;
+
+    const targetPath = currentActive.error.file_path;
     setIsAgentRunning(true);
-    setAgentSteps([]);
+
+    setActiveErrors((prev) =>
+      prev.map((item) =>
+        pathMatches(item.error.file_path, targetPath)
+          ? { ...item, is_running: true, steps: [], is_resolved: false }
+          : item
+      )
+    );
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke<string>("run_agentic_fix", {
-        error: currentError,
+        error: currentActive.error,
         workspace_path: settings?.watched_paths?.[0] || null,
       });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          sender: "ai",
-          text: result,
-          timestamp: Date.now(),
-        },
-      ]);
+      const aiMsg: ChatMessage = {
+        id: Date.now().toString(),
+        sender: "ai",
+        text: result,
+        timestamp: Date.now(),
+      };
+
+      setActiveErrors((prev) =>
+        prev.map((item) =>
+          pathMatches(item.error.file_path, targetPath)
+            ? {
+                ...item,
+                is_running: false,
+                is_resolved: true,
+                messages: [...(item.messages || []), aiMsg],
+              }
+            : item
+        )
+      );
     } catch (err: unknown) {
       const msg =
         typeof err === "string"
           ? err
           : (err as Error)?.message || "Gagal menjalankan perbaikan otomatis";
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          sender: "ai",
-          text: `Gagal menjalankan perbaikan otomatis: ${msg}`,
-          timestamp: Date.now(),
-        },
-      ]);
+      const errMsg: ChatMessage = {
+        id: Date.now().toString(),
+        sender: "ai",
+        text: `Gagal menjalankan perbaikan otomatis: ${msg}`,
+        timestamp: Date.now(),
+      };
+      setActiveErrors((prev) =>
+        prev.map((item) =>
+          pathMatches(item.error.file_path, targetPath)
+            ? {
+                ...item,
+                is_running: false,
+                messages: [...(item.messages || []), errMsg],
+              }
+            : item
+        )
+      );
     } finally {
       setIsAgentRunning(false);
     }
   };
 
   const handleSendMessage = async (text: string) => {
+    const currentActive = activeErrors[selectedErrorIndex];
+    if (!currentActive) return;
+    const targetPath = currentActive.error.file_path;
+
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: "user",
       text,
       timestamp: Date.now(),
     };
-    setMessages((prev) => [...prev, userMsg]);
+
+    setActiveErrors((prev) =>
+      prev.map((item) =>
+        pathMatches(item.error.file_path, targetPath)
+          ? {
+              ...item,
+              messages: [...(item.messages || []), userMsg],
+              is_running: true,
+            }
+          : item
+      )
+    );
+
     setIsLoading(true);
     setIsAgentRunning(true);
 
@@ -456,38 +544,59 @@ export function App() {
       const reply = await invoke<string>("ask_followup", {
         question: text,
         image_base64: capturedImage?.base64 || null,
-        active_error: currentError,
+        active_error: currentActive.error,
         workspace_path: settings?.watched_paths?.[0] || null,
       });
       setCapturedImage(null);
       if (reply && reply.trim()) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            sender: "ai",
-            text: reply.trim(),
-            timestamp: Date.now(),
-          },
-        ]);
+        const aiMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          sender: "ai",
+          text: reply.trim(),
+          timestamp: Date.now(),
+        };
+        setActiveErrors((prev) =>
+          prev.map((item) =>
+            pathMatches(item.error.file_path, targetPath)
+              ? {
+                  ...item,
+                  messages: [...(item.messages || []), aiMsg],
+                }
+              : item
+          )
+        );
       }
     } catch (err: unknown) {
       const errMsg =
         typeof err === "string"
           ? err
           : (err as Error)?.message || "Gagal menghubungi AI";
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: "ai",
-          text: `Gagal memproses permintaan: ${errMsg}`,
-          timestamp: Date.now(),
-        },
-      ]);
+      const errChat: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: "ai",
+        text: `Gagal memproses permintaan: ${errMsg}`,
+        timestamp: Date.now(),
+      };
+      setActiveErrors((prev) =>
+        prev.map((item) =>
+          pathMatches(item.error.file_path, targetPath)
+            ? {
+                ...item,
+                messages: [...(item.messages || []), errChat],
+              }
+            : item
+        )
+      );
     } finally {
       setIsLoading(false);
       setIsAgentRunning(false);
+      setActiveErrors((prev) =>
+        prev.map((item) =>
+          pathMatches(item.error.file_path, targetPath)
+            ? { ...item, is_running: false }
+            : item
+        )
+      );
     }
   };
 
@@ -517,7 +626,7 @@ export function App() {
       onClearSingleError={handleClearSingleError}
       isAnalyzing={isAnalyzing}
       analyzingInfo={analyzingInfo}
-      messages={messages}
+      messages={currentActive?.messages || []}
       activeFileActivity={activeFileActivity}
       onSendMessage={handleSendMessage}
       onClose={handleClose}
@@ -535,8 +644,8 @@ export function App() {
       permissionNotice={permissionNotice}
       onDismissPermissionNotice={() => setPermissionNotice(null)}
       onStartAgenticFix={handleStartAgenticFix}
-      isAgentRunning={isAgentRunning}
-      agentSteps={agentSteps}
+      isAgentRunning={currentActive?.is_running ?? isAgentRunning}
+      agentSteps={currentActive?.steps || []}
       onCaptureScreen={async () => {
         try {
           const { invoke } = await import("@tauri-apps/api/core");

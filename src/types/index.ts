@@ -37,6 +37,10 @@ export interface ActiveErrorItem {
   hit_count: number;
   is_looping: boolean;
   timestamp: number;
+  is_resolved?: boolean;
+  steps?: AgentStep[];
+  messages?: ChatMessage[];
+  is_running?: boolean;
 }
 
 export interface AgentStep {
@@ -48,6 +52,7 @@ export interface AgentStep {
   message?: string;
   output?: string;
   timestamp: number;
+  file_path?: string;
 }
 
 
