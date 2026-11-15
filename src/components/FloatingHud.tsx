@@ -780,10 +780,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 }`}
               >
                 <div
-                  className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed ${
+                  className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap selection:bg-white/20 ${
                     msg.sender === "user"
-                      ? "bg-white/20 text-white rounded-br-sm"
-                      : "bg-white/[0.08] text-white/90 rounded-bl-sm border border-white/[0.04]"
+                      ? "bg-white/20 text-white rounded-br-sm font-medium"
+                      : "bg-white/[0.08] text-white/90 rounded-bl-sm border border-white/[0.04] font-normal"
                   }`}
                 >
                   {msg.text}

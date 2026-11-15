@@ -33,6 +33,8 @@ export function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAgentRunning, setIsAgentRunningState] = useState(false);
+  const [standbyMessages, setStandbyMessages] = useState<ChatMessage[]>([]);
+  const [standbySteps, setStandbySteps] = useState<AgentStep[]>([]);
   const isAgentRunningRef = useRef(false);
   const selectedErrorIndexRef = useRef(selectedErrorIndex);
 
@@ -221,7 +223,10 @@ export function App() {
           const isFinish = step.step_type === "finish";
 
           setActiveErrors((prev) => {
-            if (prev.length === 0) return prev;
+            if (prev.length === 0) {
+              setStandbySteps((s) => [...s, step]);
+              return prev;
+            }
 
             let targetIdx = -1;
             // 1. Match by step's explicit file_path
@@ -264,6 +269,8 @@ export function App() {
         await listen("fixit-reset-standby", () => {
           // Pure local state reset - DO NOT re-invoke backend to avoid recursive event storm
           setActiveErrors([]);
+          setStandbyMessages([]);
+          setStandbySteps([]);
           setSelectedErrorIndex(0);
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
@@ -434,6 +441,8 @@ export function App() {
 
   const handleClearError = async () => {
     setActiveErrors([]);
+    setStandbyMessages([]);
+    setStandbySteps([]);
     setSelectedErrorIndex(0);
     setIsAgentRunning(false);
     try {
@@ -514,8 +523,6 @@ export function App() {
 
   const handleSendMessage = async (text: string) => {
     const currentActive = activeErrors[selectedErrorIndex];
-    if (!currentActive) return;
-    const targetPath = currentActive.error.file_path;
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
@@ -524,35 +531,60 @@ export function App() {
       timestamp: Date.now(),
     };
 
-    setActiveErrors((prev) =>
-      prev.map((item) =>
-        pathMatches(item.error.file_path, targetPath)
-          ? {
-              ...item,
-              messages: [...(item.messages || []), userMsg],
-              is_running: true,
-            }
-          : item
-      )
-    );
+    if (currentActive) {
+      const targetPath = currentActive.error.file_path;
 
-    setIsLoading(true);
-    setIsAgentRunning(true);
+      setActiveErrors((prev) =>
+        prev.map((item) =>
+          pathMatches(item.error.file_path, targetPath)
+            ? {
+                ...item,
+                messages: [...(item.messages || []), userMsg],
+                is_running: true,
+              }
+            : item
+        )
+      );
 
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const reply = await invoke<string>("ask_followup", {
-        question: text,
-        image_base64: capturedImage?.base64 || null,
-        active_error: currentActive.error,
-        workspace_path: settings?.watched_paths?.[0] || null,
-      });
-      setCapturedImage(null);
-      if (reply && reply.trim()) {
-        const aiMsg: ChatMessage = {
+      setIsLoading(true);
+      setIsAgentRunning(true);
+
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const reply = await invoke<string>("ask_followup", {
+          question: text,
+          image_base64: capturedImage?.base64 || null,
+          active_error: currentActive.error,
+          workspace_path: settings?.watched_paths?.[0] || null,
+        });
+        setCapturedImage(null);
+        if (reply && reply.trim()) {
+          const aiMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            sender: "ai",
+            text: reply.trim(),
+            timestamp: Date.now(),
+          };
+          setActiveErrors((prev) =>
+            prev.map((item) =>
+              pathMatches(item.error.file_path, targetPath)
+                ? {
+                    ...item,
+                    messages: [...(item.messages || []), aiMsg],
+                  }
+                : item
+            )
+          );
+        }
+      } catch (err: unknown) {
+        const errMsg =
+          typeof err === "string"
+            ? err
+            : (err as Error)?.message || "Gagal menghubungi AI";
+        const errChat: ChatMessage = {
           id: (Date.now() + 1).toString(),
           sender: "ai",
-          text: reply.trim(),
+          text: `Gagal memproses permintaan: ${errMsg}`,
           timestamp: Date.now(),
         };
         setActiveErrors((prev) =>
@@ -560,43 +592,62 @@ export function App() {
             pathMatches(item.error.file_path, targetPath)
               ? {
                   ...item,
-                  messages: [...(item.messages || []), aiMsg],
+                  messages: [...(item.messages || []), errChat],
                 }
               : item
           )
         );
+      } finally {
+        setIsLoading(false);
+        setIsAgentRunning(false);
+        setActiveErrors((prev) =>
+          prev.map((item) =>
+            pathMatches(item.error.file_path, targetPath)
+              ? { ...item, is_running: false }
+              : item
+          )
+        );
       }
-    } catch (err: unknown) {
-      const errMsg =
-        typeof err === "string"
-          ? err
-          : (err as Error)?.message || "Gagal menghubungi AI";
-      const errChat: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: "ai",
-        text: `Gagal memproses permintaan: ${errMsg}`,
-        timestamp: Date.now(),
-      };
-      setActiveErrors((prev) =>
-        prev.map((item) =>
-          pathMatches(item.error.file_path, targetPath)
-            ? {
-                ...item,
-                messages: [...(item.messages || []), errChat],
-              }
-            : item
-        )
-      );
-    } finally {
-      setIsLoading(false);
-      setIsAgentRunning(false);
-      setActiveErrors((prev) =>
-        prev.map((item) =>
-          pathMatches(item.error.file_path, targetPath)
-            ? { ...item, is_running: false }
-            : item
-        )
-      );
+    } else {
+      // Standby / General Conversation (ketika tidak ada error sintaks aktif)
+      setStandbyMessages((prev) => [...prev, userMsg]);
+      setIsLoading(true);
+      setIsAgentRunning(true);
+
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const reply = await invoke<string>("ask_followup", {
+          question: text,
+          image_base64: capturedImage?.base64 || null,
+          active_error: null,
+          workspace_path: settings?.watched_paths?.[0] || null,
+        });
+        setCapturedImage(null);
+        if (reply && reply.trim()) {
+          const aiMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            sender: "ai",
+            text: reply.trim(),
+            timestamp: Date.now(),
+          };
+          setStandbyMessages((prev) => [...prev, aiMsg]);
+        }
+      } catch (err: unknown) {
+        const errMsg =
+          typeof err === "string"
+            ? err
+            : (err as Error)?.message || "Gagal menghubungi AI";
+        const errChat: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          sender: "ai",
+          text: `Gagal memproses permintaan: ${errMsg}`,
+          timestamp: Date.now(),
+        };
+        setStandbyMessages((prev) => [...prev, errChat]);
+      } finally {
+        setIsLoading(false);
+        setIsAgentRunning(false);
+      }
     }
   };
 
@@ -626,7 +677,7 @@ export function App() {
       onClearSingleError={handleClearSingleError}
       isAnalyzing={isAnalyzing}
       analyzingInfo={analyzingInfo}
-      messages={currentActive?.messages || []}
+      messages={currentActive ? (currentActive.messages || []) : standbyMessages}
       activeFileActivity={activeFileActivity}
       onSendMessage={handleSendMessage}
       onClose={handleClose}
@@ -645,7 +696,7 @@ export function App() {
       onDismissPermissionNotice={() => setPermissionNotice(null)}
       onStartAgenticFix={handleStartAgenticFix}
       isAgentRunning={currentActive?.is_running ?? isAgentRunning}
-      agentSteps={currentActive?.steps || []}
+      agentSteps={currentActive ? (currentActive.steps || []) : standbySteps}
       onCaptureScreen={async () => {
         try {
           const { invoke } = await import("@tauri-apps/api/core");

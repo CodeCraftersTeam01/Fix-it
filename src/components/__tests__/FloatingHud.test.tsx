@@ -419,4 +419,32 @@ describe("FloatingHud standby reset", () => {
     // The resolved message text appears for the active resolved item
     expect(screen.getByText("Perbaikan selesai • Kode berhasil diperbaiki")).toBeTruthy();
   });
+
+  it("renders conversation messages in standby mode when no error is active", () => {
+    const onSendMessage = vi.fn();
+    const messages = [
+      { id: "1", sender: "user" as const, text: "hello", timestamp: 100 },
+      { id: "2", sender: "ai" as const, text: "Halo! Ada yang bisa saya bantu terkait kode Anda?", timestamp: 101 },
+    ];
+
+    render(
+      <FloatingHud
+        currentError={null}
+        explanation={null}
+        messages={messages}
+        onSendMessage={onSendMessage}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("hello")).toBeTruthy();
+    expect(screen.getByText("Halo! Ada yang bisa saya bantu terkait kode Anda?")).toBeTruthy();
+
+    // Can send follow up question
+    const input = screen.getByPlaceholderText("Tanya FixIt apa saja...");
+    fireEvent.change(input, { target: { value: "apa itu middleware?" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onSendMessage).toHaveBeenCalledWith("apa itu middleware?");
+  });
 });
