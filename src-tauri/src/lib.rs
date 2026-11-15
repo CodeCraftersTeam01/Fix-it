@@ -9,6 +9,7 @@ pub mod runtime_parser;
 pub mod watcher;
 
 use ai_client::{AiClient, FixExplanation};
+use base64::Engine;
 use config::AppConfig;
 use diagnostics::{DiagnosticsParser, InspectionResult};
 use std::collections::HashMap;
@@ -351,16 +352,18 @@ pub mod commands {
     pub async fn start_interactive_screenshot(
         app: tauri::AppHandle,
     ) -> Result<Option<CapturedScreenResult>, String> {
-        #[cfg(target_os = "macos")]
-        use std::process::Command;
-        #[cfg(target_os = "macos")]
-        use base64::Engine;
-
-        let path = "/tmp/fixit_capture.png";
-        let _ = std::fs::remove_file(path);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = app;
+            return Ok(None);
+        }
 
         #[cfg(target_os = "macos")]
         {
+            use std::process::Command;
+            let path = "/tmp/fixit_capture.png";
+            let _ = std::fs::remove_file(path);
+
             extern "C" {
                 fn CGPreflightScreenCaptureAccess() -> bool;
                 fn CGRequestScreenCaptureAccess() -> bool;
@@ -384,29 +387,29 @@ pub mod commands {
             if !status.success() || !std::path::Path::new(path).exists() {
                 return Ok(None);
             }
-        }
 
-        if let Ok(bytes) = std::fs::read(path) {
-            if bytes.is_empty() {
-                return Ok(None);
+            if let Ok(bytes) = std::fs::read(path) {
+                if bytes.is_empty() {
+                    return Ok(None);
+                }
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let result = CapturedScreenResult {
+                    path: path.to_string(),
+                    base64: b64,
+                };
+
+                let _ = app.emit("fixit-captured-screen", &result);
+
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+
+                Ok(Some(result))
+            } else {
+                Ok(None)
             }
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            let result = CapturedScreenResult {
-                path: path.to_string(),
-                base64: b64,
-            };
-
-            let _ = app.emit("fixit-captured-screen", &result);
-
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            }
-
-            Ok(Some(result))
-        } else {
-            Ok(None)
         }
     }
 
@@ -599,32 +602,38 @@ pub mod commands {
         w: i32,
         h: i32,
     ) -> Result<CapturedScreenResult, String> {
-        use std::process::Command;
-        use base64::Engine;
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (app, x, y, w, h);
+            return Err("Screen capture is currently supported on macOS".to_string());
+        }
 
-        let capture_w = if w < 1 { 1 } else { w };
-        let capture_h = if h < 1 { 1 } else { h };
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+            let capture_w = if w < 1 { 1 } else { w };
+            let capture_h = if h < 1 { 1 } else { h };
 
-        let path = "/tmp/fixit_capture.png";
-        let status = Command::new("screencapture")
-            .args(["-x", "-R", &format!("{},{},{},{}", x, y, capture_w, capture_h), path])
-            .status()
-            .map_err(|e| e.to_string())?;
-        
-        if status.success() {
-            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            let result = CapturedScreenResult {
-                path: path.to_string(),
-                base64: b64,
-            };
+            let path = "/tmp/fixit_capture.png";
+            let status = Command::new("screencapture")
+                .args(["-x", "-R", &format!("{},{},{},{}", x, y, capture_w, capture_h), path])
+                .status()
+                .map_err(|e| e.to_string())?;
+            
+            if status.success() {
+                let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let result = CapturedScreenResult {
+                    path: path.to_string(),
+                    base64: b64,
+                };
 
-            // Emit to frontend (main window FloatingHud)
-            let _ = app.emit("fixit-captured-screen", &result);
+                let _ = app.emit("fixit-captured-screen", &result);
 
-            Ok(result)
-        } else {
-            Err("Gagal mengambil screenshot".to_string())
+                Ok(result)
+            } else {
+                Err("Gagal mengambil screenshot".to_string())
+            }
         }
     }
 
