@@ -276,6 +276,11 @@ export function App() {
           setAnalyzingInfo(null);
           setIsAgentRunning(false);
         });
+        await listen<AppSettings>("fixit-config-updated", (event) => {
+          if (event.payload) {
+            setSettings(event.payload);
+          }
+        });
       } catch {
         // Running in standard browser preview
       }

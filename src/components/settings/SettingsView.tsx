@@ -1251,7 +1251,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="flex items-center gap-2">
                         <select
                           value={activeModel}
-                          onChange={(e) => setActiveModel(e.target.value)}
+                          onChange={(e) => {
+                            const newModel = e.target.value;
+                            setActiveModel(newModel);
+                            handleApplyModel(newModel);
+                          }}
                           className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/90 focus:outline-none focus:border-white/20 cursor-pointer"
                         >
                           {selectedProvider.available_models.map((m) => (

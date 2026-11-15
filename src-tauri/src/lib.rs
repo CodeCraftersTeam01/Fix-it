@@ -536,6 +536,7 @@ pub mod commands {
     pub async fn save_config(
         new_config: AppConfig,
         state: tauri::State<'_, AppState>,
+        app_handle: tauri::AppHandle,
     ) -> Result<(), String> {
         new_config.save()?;
         {
@@ -547,7 +548,8 @@ pub mod commands {
             }
         }
         let mut conf = state.config.lock().await;
-        *conf = new_config;
+        *conf = new_config.clone();
+        let _ = app_handle.emit("fixit-config-updated", &new_config);
         Ok(())
     }
 
