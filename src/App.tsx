@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FloatingHud } from "./components/FloatingHud";
 import { SettingsView } from "./components/settings/SettingsView";
 import { AppSettings } from "./components/settings/types";
@@ -33,7 +33,14 @@ export function App() {
   const [activeFileActivity, setActiveFileActivity] = useState<FileActivity | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [isAgentRunning, setIsAgentRunningState] = useState(false);
+  const isAgentRunningRef = useRef(false);
+
+  const setIsAgentRunning = (running: boolean) => {
+    isAgentRunningRef.current = running;
+    setIsAgentRunningState(running);
+  };
+
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
 
   const [settings, setSettings] = useState<AppSettings>({
@@ -99,6 +106,10 @@ export function App() {
         await listen<{ file_name: string; line?: number; error_type?: string }>(
           "fixit-error-analyzing",
           (event) => {
+            // Jangan membatalkan sesi agent jika AI agent sedang aktif melakukan perbaikan
+            if (isAgentRunningRef.current) {
+              return;
+            }
             setIsAnalyzing(true);
             setAnalyzingInfo(event.payload);
             // Bersihkan riwayat steps dan pesan perbaikan dari error sebelumnya
@@ -113,6 +124,10 @@ export function App() {
           hit_count?: number;
           is_looping?: boolean;
         }>("fixit-error-detected", (event) => {
+          // Jangan membatalkan sesi agent jika AI agent sedang aktif melakukan perbaikan
+          if (isAgentRunningRef.current) {
+            return;
+          }
           setIsAnalyzing(false);
           setAnalyzingInfo(null);
           const payload = event.payload;
@@ -172,6 +187,9 @@ export function App() {
           );
         });
         await listen<FileActivity>("fixit-file-writing", (event) => {
+          if (isAgentRunningRef.current) {
+            return;
+          }
           setActiveFileActivity(event.payload);
         });
         await listen<FileActivity>("fixit-file-valid", (event) => {

@@ -35,6 +35,7 @@ pub struct AppState {
     pub config: Arc<Mutex<AppConfig>>,
     pub flood_guard: Arc<Mutex<flood_guard::FloodGuard>>,
     pub active_errors: Arc<Mutex<HashMap<String, ActiveErrorRecord>>>,
+    pub agent_active_repairs: Arc<Mutex<HashMap<String, std::time::Instant>>>,
 }
 
 impl AppState {
@@ -43,6 +44,7 @@ impl AppState {
             config: Arc::new(Mutex::new(config)),
             flood_guard: Arc::new(Mutex::new(flood_guard::FloodGuard::new())),
             active_errors: Arc::new(Mutex::new(HashMap::new())),
+            agent_active_repairs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -51,7 +53,26 @@ impl AppState {
             config: Arc::new(Mutex::new(config)),
             flood_guard: Arc::new(Mutex::new(flood_guard)),
             active_errors: Arc::new(Mutex::new(HashMap::new())),
+            agent_active_repairs: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    pub async fn mark_agent_repairing(&self, file_path: &str) {
+        let mut map = self.agent_active_repairs.lock().await;
+        let norm = file_path.trim().replace('\\', "/");
+        map.insert(norm, std::time::Instant::now());
+    }
+
+    pub async fn is_agent_repairing(&self, file_path: &str) -> bool {
+        let mut map = self.agent_active_repairs.lock().await;
+        let now = std::time::Instant::now();
+        map.retain(|_, instant| now.duration_since(*instant) < std::time::Duration::from_secs(20));
+        map.keys().any(|k| path_matches(k, file_path))
+    }
+
+    pub async fn clear_agent_repairing(&self, file_path: &str) {
+        let mut map = self.agent_active_repairs.lock().await;
+        map.retain(|k, _| !path_matches(k, file_path));
     }
 
     pub async fn add_or_update_error(
@@ -548,13 +569,24 @@ pub mod commands {
         app_handle: tauri::AppHandle,
     ) -> Result<String, String> {
         let conf = state.config.lock().await.clone();
-        agent_engine::AgentEngine::run_agent_fix(
+        state.mark_agent_repairing(&error.file_path).await;
+
+        let res = agent_engine::AgentEngine::run_agent_fix(
             &error,
             workspace_path.as_deref(),
             &conf,
             Some(&app_handle),
         )
-        .await
+        .await;
+
+        let state_clone = state.inner().clone();
+        let path_clone = error.file_path.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+            state_clone.clear_agent_repairing(&path_clone).await;
+        });
+
+        res
     }
 
     #[tauri::command]
@@ -1067,6 +1099,23 @@ pub fn setup_background_service(
         // 1. Real-time writing callback
         move |writing_file| {
             let app_inner = app_for_writing.clone();
+            let file_path_str = writing_file.to_string_lossy().to_string();
+
+            // Do not emit writing activity if AI agent is actively modifying this file
+            let state: tauri::State<AppState> = app_inner.state();
+            let is_agent = {
+                if let Ok(mut map) = state.agent_active_repairs.try_lock() {
+                    let now = std::time::Instant::now();
+                    map.retain(|_, instant| now.duration_since(*instant) < std::time::Duration::from_secs(20));
+                    map.keys().any(|k| path_matches(k, &file_path_str))
+                } else {
+                    false
+                }
+            };
+            if is_agent {
+                return;
+            }
+
             let file_name = writing_file
                 .file_name()
                 .map(|f| f.to_string_lossy().to_string())
@@ -1081,7 +1130,7 @@ pub fn setup_background_service(
             let editor = detect_active_ide();
 
             let _ = app_inner.emit("fixit-file-writing", serde_json::json!({
-                "file_path": writing_file.to_string_lossy().to_string(),
+                "file_path": file_path_str,
                 "file_name": file_name,
                 "project": project,
                 "editor": editor,
@@ -1093,6 +1142,9 @@ pub fn setup_background_service(
         move |changed_file| {
             let app_inner = app_for_idle.clone();
             tauri::async_runtime::spawn(async move {
+                let file_path_str = changed_file.to_string_lossy().to_string();
+                let state: tauri::State<AppState> = app_inner.state();
+
                 let file_name = changed_file
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
@@ -1106,13 +1158,28 @@ pub fn setup_background_service(
 
                 let editor = detect_active_ide();
 
+                // If file is currently being modified by AI agent, suppress false error detection
+                if state.is_agent_repairing(&file_path_str).await {
+                    if let InspectionResult::Valid = DiagnosticsParser::inspect_file(&changed_file) {
+                        resolve_file_error(&app_inner, &file_path_str).await;
+                        let _ = app_inner.emit("fixit-file-valid", serde_json::json!({
+                            "file_path": file_path_str,
+                            "file_name": file_name,
+                            "project": project,
+                            "editor": editor,
+                            "status": "Sintaks Valid ✓",
+                            "timestamp": current_timestamp()
+                        }));
+                    }
+                    return;
+                }
+
                 match DiagnosticsParser::inspect_file(&changed_file) {
                     InspectionResult::Error(mut err) => {
                         err.project_name = Some(project.clone());
                         process_and_emit_error(&app_inner, err).await;
                     }
                     InspectionResult::Valid => {
-                        let file_path_str = changed_file.to_string_lossy().to_string();
                         resolve_file_error(&app_inner, &file_path_str).await;
 
                         // Valid syntax verified by language parser/linter
@@ -1127,7 +1194,6 @@ pub fn setup_background_service(
                     }
                     InspectionResult::Unsupported => {
                         // File type not inspected or no local parser available - do not falsely claim "Sintaks Valid"
-                        let file_path_str = changed_file.to_string_lossy().to_string();
                         resolve_file_error(&app_inner, &file_path_str).await;
                     }
                 }

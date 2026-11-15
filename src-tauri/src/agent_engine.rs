@@ -1120,11 +1120,13 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
           (PENTING: Jangan gunakan opsi `-p` yang meminta input password interaktif!).
           Lalu jalankan migrasi database:
           run_command(\"php artisan migrate --no-interaction\")
-   - Jika error sintaks atau logika kode (PHP, JS, dsb):
-     a. Baca berkas yang error beserta konteks sekitarnya (minimal 30-50 baris) menggunakan `read_file`.
-     b. Pahami struktur method, namespace, parameter, dan kurung/titik-koma yang hilang.
-     c. PANGGIL `edit_file` untuk mengganti kode yang salah dengan kode yang benar secara presisi.
-     d. Verifikasi hasil edit dengan linter/syntax checker (misal: `php -l <path_file>`).
+   - Jika error sintaks atau logika kode (JavaScript, React JSX, TypeScript, PHP, Python, dsb):
+     a. FOKUS LANGSUNG PADA BERKAS ERROR: Buka dan baca berkas error di sekitar baris error menggunakan `read_file`.
+     b. JANGAN membuang-buang langkah dengan membaca berkas konfigurasi linter atau tooling seperti .eslintrc, .oxlintrc, package.json, vite.config.js, tsconfig.json KECUALI jika pesan error secara spesifik menyebutkan berkas konfigurasi tersebut!
+     c. Pahami struktur kode, perbaiki kurung/titik-koma/import/hook yang hilang atau typo (misal: lengkapi deklarasi fungsi, import hook useState/useEffect, perbaiki penutupan tag JSX atau kurung kurawal).
+     d. PANGGIL `edit_file` untuk mengganti kode yang salah dengan kode yang benar secara presisi dan tuntas.
+     e. Jangan membuat perubahan setengah-setengah yang memicu syntax error baru. Pastikan kode pengganti valid dan lengkap.
+     f. Segera selesaikan tugas Anda setelah `edit_file` berhasil dieksekusi tanpa berputar-putar.
 
 2. VERIFIKASI SEBELUM MENYATAKAN SELESAI (EVIDENCE BEFORE ASSERTIONS):
    - Setelah melakukan tindakan perbaikan (baik edit .env, buat database, migrasi, atau edit kode), lakukan verifikasi singkat untuk membuktikan masalah sudah teratasi.
@@ -1154,7 +1156,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             serde_json::json!({
                 "role": "user",
                 "content": format!(
-                    "Tolong perbaiki error ini secara tuntas:\nBerkas: {}\nBaris: {:?}\nTipe: {}\nPesan: {}\n\nGunakan tools Anda untuk memeriksa akar masalah dan langsung lakukan perbaikan nyata (buat database/edit berkas/migrasi).",
+                    "Tolong perbaiki error ini secara tuntas:\nBerkas: {}\nBaris: {:?}\nTipe: {}\nPesan: {}\n\nPANDUAN EFISIENSI:\n1. Baca potongan berkas di sekitar baris error menggunakan `read_file`.\n2. Langsung perbaiki kode yang salah menggunakan `edit_file` pada berkas tersebut secara tuntas.\n3. JANGAN membaca berkas konfigurasi linter (.eslintrc, .oxlintrc, vite.config, dll) karena masalahnya murni di berkas kode ini.\n4. Segera selesaikan tugas Anda setelah perbaikan berhasil dieksekusi.",
                     error.file_path,
                     error.line_number,
                     error.error_type,
