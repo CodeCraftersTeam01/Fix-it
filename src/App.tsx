@@ -507,7 +507,14 @@ export function App() {
                 ...item,
                 is_running: false,
                 is_resolved: true,
-                messages: [...(item.messages || []), aiMsg],
+                messages: [
+                  ...(item.messages || []).filter(
+                    (m) =>
+                      !m.text.includes("Pemeriksaan dan tindakan perbaikan") &&
+                      !m.text.includes("Pembahasan Masalah")
+                  ),
+                  aiMsg,
+                ],
               }
             : item
         )

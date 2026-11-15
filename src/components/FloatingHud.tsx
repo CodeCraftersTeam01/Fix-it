@@ -97,8 +97,21 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const finishSummary = finishStep?.output?.trim();
 
   const displayMessages = useMemo(() => {
-    const list = [...messages];
-    if (finishSummary && !list.some((m) => m.text.trim() === finishSummary)) {
+    const list: ChatMessage[] = [];
+    const seenTexts = new Set<string>();
+    const source = messages || [];
+
+    for (const msg of source) {
+      const norm = msg.text.trim();
+      if (norm && !seenTexts.has(norm)) {
+        seenTexts.add(norm);
+        list.push(msg);
+      }
+    }
+
+    // Only add finishSummary if messages contains no AI message at all
+    const hasAiMessage = list.some((m) => m.sender === "ai");
+    if (!hasAiMessage && finishSummary && !seenTexts.has(finishSummary)) {
       list.push({
         id: "finish-summary",
         sender: "ai",
@@ -106,6 +119,32 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         timestamp: finishStep?.timestamp || Date.now(),
       });
     }
+
+    // If there are multiple resolution messages (e.g. from retries or multiple events),
+    // retain only the single best, most detailed discussion
+    const resIndices: number[] = [];
+    list.forEach((m, idx) => {
+      if (
+        m.sender === "ai" &&
+        (m.text.includes("Pemeriksaan dan tindakan perbaikan") ||
+          m.text.includes("Pembahasan Masalah"))
+      ) {
+        resIndices.push(idx);
+      }
+    });
+
+    if (resIndices.length > 1) {
+      let bestIdx = resIndices[0];
+      let maxLen = list[bestIdx].text.length;
+      for (const idx of resIndices) {
+        if (list[idx].text.length > maxLen) {
+          maxLen = list[idx].text.length;
+          bestIdx = idx;
+        }
+      }
+      return list.filter((_, idx) => !resIndices.includes(idx) || idx === bestIdx);
+    }
+
     return list;
   }, [messages, finishSummary, finishStep]);
 

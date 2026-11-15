@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { FloatingHud } from "../FloatingHud";
-import { ActiveErrorItem } from "../../types";
+import { ActiveErrorItem, CodeError, FixExplanation } from "../../types";
 
 describe("FloatingHud standby reset", () => {
   const dummyError = {
@@ -448,5 +448,63 @@ describe("FloatingHud standby reset", () => {
     fireEvent.change(input, { target: { value: "apa itu middleware?" } });
     fireEvent.submit(input.closest("form")!);
     expect(onSendMessage).toHaveBeenCalledWith("apa itu middleware?");
+  });
+
+  it("deduplicates resolution messages and finishSummary to prevent duplicate chat bubbles", () => {
+    const error: CodeError = {
+      file_path: "src/index.html",
+      line_number: 244,
+      error_type: "SyntaxError",
+      raw_message: "Unexpected token '{'",
+    };
+    const explanation: FixExplanation = {
+      summary: "Error syntax",
+      why_it_happened: "Kurung buka tidak valid",
+      steps: [],
+    };
+    const activeErrors: ActiveErrorItem[] = [
+      {
+        id: "src/index.html",
+        error,
+        explanation,
+        hit_count: 1,
+        is_looping: false,
+        timestamp: 100,
+        is_resolved: true,
+        messages: [
+          {
+            id: "1",
+            sender: "ai",
+            text: "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: `Unexpected token '{'`.\n\n**Pembahasan Masalah & Penyebab:**\nKurung buka tidak valid",
+            timestamp: 101,
+          },
+        ],
+        steps: [
+          {
+            step: 1,
+            step_type: "finish",
+            output: "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: `Unexpected token '{'`.",
+            timestamp: 102,
+          },
+        ],
+      },
+    ];
+
+    render(
+      <FloatingHud
+        activeErrors={activeErrors}
+        selectedErrorIndex={0}
+        agentSteps={activeErrors[0].steps || []}
+        messages={[]}
+        onSendMessage={vi.fn()}
+        onClose={vi.fn()}
+        onClearError={vi.fn()}
+      />
+    );
+
+    // Only one resolution message bubble should be rendered, not two
+    const bubbles = screen.getAllByText(/Pemeriksaan dan tindakan perbaikan telah selesai/);
+    expect(bubbles.length).toBe(1);
+    expect(screen.getByText("Saya paham")).toBeTruthy();
   });
 });
