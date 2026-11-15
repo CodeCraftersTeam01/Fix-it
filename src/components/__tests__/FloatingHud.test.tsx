@@ -418,6 +418,8 @@ describe("FloatingHud standby reset", () => {
 
     // The resolved message text appears for the active resolved item
     expect(screen.getByText("Perbaikan selesai • Kode berhasil diperbaiki")).toBeTruthy();
+    const understandBtn = screen.getByText("Oke, saya paham");
+    expect(understandBtn).toBeTruthy();
   });
 
   it("renders conversation messages in standby mode when no error is active", () => {

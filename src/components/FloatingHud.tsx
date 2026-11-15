@@ -53,7 +53,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   activeErrors = [],
   selectedErrorIndex = 0,
   onSelectError,
-  onClearSingleError: _onClearSingleError,
+  onClearSingleError,
   isAnalyzing = false,
   analyzingInfo = null,
   messages,
@@ -474,34 +474,68 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {isRepairMode ? (
+            {activeItem?.is_resolved ? (
+              /* Mode Selesai Diperbaiki: Card Aesthetic Emerald dengan Penjelasan & Tombol "Oke, saya paham" */
+              <div className="p-4 rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/20 shadow-sm space-y-3 font-sans">
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={12} className="text-emerald-400 stroke-[3]" />
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13.5px] font-medium text-emerald-200">
+                        Perbaikan selesai • Kode berhasil diperbaiki
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
+                        {getFileName(activeError.file_path)}
+                        {activeError.line_number ? `:${activeError.line_number}` : ""}
+                      </span>
+                    </div>
+
+                    {/* Penjelasan kenapa kok bisa error */}
+                    <div className="text-[12px] text-white/75 leading-relaxed space-y-1 pt-0.5">
+                      {activeExplanation?.why_it_happened ? (
+                        <p>{activeExplanation.why_it_happened}</p>
+                      ) : activeExplanation?.summary ? (
+                        <p>{activeExplanation.summary}</p>
+                      ) : (
+                        <p>Kesalahan sintaks pada berkas ini telah diperbaiki sehingga kode dapat berjalan kembali.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tombol berwarna seperti cardnya, simple, aesthetic, dan kecil: "Oke, saya paham" */}
+                <div className="flex items-center justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeError?.file_path) {
+                        onClearSingleError?.(activeError.file_path);
+                      } else {
+                        onClearError?.();
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 border border-emerald-500/35 text-emerald-200 hover:text-emerald-100 text-[11.5px] font-medium flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                  >
+                    <Check size={12} strokeWidth={2.5} />
+                    <span>Oke, saya paham</span>
+                  </button>
+                </div>
+              </div>
+            ) : isRepairMode ? (
               /* Mode Perbaikan: Minimalist, Cozy, Clean - Zero Card Soup (Sesuai Antislop & Design Taste) */
               <div className="space-y-1.5 pb-1 select-none">
                 <div className="flex items-center gap-2 py-0.5">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      activeItem?.is_resolved ? "bg-emerald-400" : "bg-rose-400"
-                    }`}
-                  />
-                  <span
-                    className={`px-2 py-0.5 rounded-md font-mono text-[11.5px] font-medium flex items-center gap-1.5 ${
-                      activeItem?.is_resolved
-                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25"
-                        : "bg-white/[0.06] text-white/80"
-                    }`}
-                  >
-                    {activeItem?.is_resolved && (
-                      <Check size={11} className="text-emerald-400 stroke-[2.5] shrink-0" />
-                    )}
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-rose-400" />
+                  <span className="px-2 py-0.5 rounded-md font-mono text-[11.5px] font-medium flex items-center gap-1.5 bg-white/[0.06] text-white/80">
                     <span>
                       {getFileName(activeError.file_path)}
                       {activeError.line_number ? `:${activeError.line_number}` : ""}
                     </span>
                   </span>
                   <span className="text-[12.5px] text-white/75 font-medium truncate flex-1">
-                    {activeItem?.is_resolved
-                      ? "Perbaikan selesai • Kode berhasil diperbaiki"
-                      : activeExplanation?.summary || activeError.raw_message}
+                    {activeExplanation?.summary || activeError.raw_message}
                   </span>
                   <button
                     type="button"

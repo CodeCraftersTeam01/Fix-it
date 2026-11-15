@@ -176,7 +176,14 @@ export function App() {
         });
         await listen<{ file_path: string }>("fixit-error-resolved", (event) => {
           if (event.payload?.file_path) {
-            removeErrorByPath(event.payload.file_path);
+            const resolvedPath = event.payload.file_path;
+            setActiveErrors((prev) =>
+              prev.map((item) =>
+                pathMatches(item.error.file_path, resolvedPath)
+                  ? { ...item, is_resolved: true, is_running: false }
+                  : item
+              )
+            );
           }
         });
         await listen<{ path: string; base64: string }>(
