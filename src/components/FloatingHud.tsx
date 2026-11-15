@@ -474,39 +474,26 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {activeItem?.is_resolved ? (
-              /* Mode Selesai Diperbaiki: Card Aesthetic Emerald dengan Penjelasan & Tombol "Oke, saya paham" */
-              <div className="p-4 rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/20 shadow-sm space-y-3 font-sans">
-                <div className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                    <Check size={12} className="text-emerald-400 stroke-[3]" />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[13.5px] font-medium text-emerald-200">
-                        Perbaikan selesai • Kode berhasil diperbaiki
-                      </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
-                        {getFileName(activeError.file_path)}
-                        {activeError.line_number ? `:${activeError.line_number}` : ""}
-                      </span>
-                    </div>
-
-                    {/* Penjelasan kenapa kok bisa error */}
-                    <div className="text-[12px] text-white/75 leading-relaxed space-y-1 pt-0.5">
-                      {activeExplanation?.why_it_happened ? (
-                        <p>{activeExplanation.why_it_happened}</p>
-                      ) : activeExplanation?.summary ? (
-                        <p>{activeExplanation.summary}</p>
-                      ) : (
-                        <p>Kesalahan sintaks pada berkas ini telah diperbaiki sehingga kode dapat berjalan kembali.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tombol berwarna seperti cardnya, simple, aesthetic, dan kecil: "Oke, saya paham" */}
-                <div className="flex items-center justify-end pt-1">
+            {isRepairMode ? (
+              /* Mode Perbaikan / Selesai: Minimalist, Cozy, Clean - Zero Card Soup */
+              <div className="space-y-1.5 pb-1 select-none">
+                <div className="flex items-center gap-2 py-0.5">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      activeItem?.is_resolved ? "bg-emerald-400" : "bg-rose-400"
+                    }`}
+                  />
+                  <span className="px-2 py-0.5 rounded-md font-mono text-[11.5px] font-medium flex items-center gap-1.5 bg-white/[0.06] text-white/80">
+                    <span>
+                      {getFileName(activeError.file_path)}
+                      {activeError.line_number ? `:${activeError.line_number}` : ""}
+                    </span>
+                  </span>
+                  <span className="text-[12.5px] text-white/75 font-medium truncate flex-1">
+                    {activeItem?.is_resolved
+                      ? "Perbaikan Selesai • Berkas Normal"
+                      : activeExplanation?.summary || activeError.raw_message}
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
@@ -516,43 +503,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         onClearError?.();
                       }
                     }}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 border border-emerald-500/35 text-emerald-200 hover:text-emerald-100 text-[11.5px] font-medium flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-                  >
-                    <Check size={12} strokeWidth={2.5} />
-                    <span>Oke, saya paham</span>
-                  </button>
-                </div>
-              </div>
-            ) : isRepairMode ? (
-              /* Mode Perbaikan: Minimalist, Cozy, Clean - Zero Card Soup (Sesuai Antislop & Design Taste) */
-              <div className="space-y-1.5 pb-1 select-none">
-                <div className="flex items-center gap-2 py-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-rose-400" />
-                  <span className="px-2 py-0.5 rounded-md font-mono text-[11.5px] font-medium flex items-center gap-1.5 bg-white/[0.06] text-white/80">
-                    <span>
-                      {getFileName(activeError.file_path)}
-                      {activeError.line_number ? `:${activeError.line_number}` : ""}
-                    </span>
-                  </span>
-                  <span className="text-[12.5px] text-white/75 font-medium truncate flex-1">
-                    {activeExplanation?.summary || activeError.raw_message}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={onClearError}
                     className="text-[11px] text-white/35 hover:text-white/70 transition cursor-pointer shrink-0"
-                    title="Tutup error"
+                    title="Tutup error dan kembali standby"
                   >
                     Tutup
                   </button>
                 </div>
-
-                {/* Penjelasan tanpa container card (clean typography) */}
-                {activeExplanation?.why_it_happened && (
-                  <p className="text-[12px] text-white/45 leading-relaxed font-sans pl-3.5 pr-1">
-                    {activeExplanation.why_it_happened}
-                  </p>
-                )}
               </div>
             ) : (
               /* Mode Normal: Error Guide Card Lengkap Sebelum Perbaikan */
@@ -700,26 +656,95 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {/* Respon AI / Ringkasan Hasil Perbaikan */}
-            {displayMessages.length > 0 && (
+            {/* Respon AI / Pembahasan Error & Ringkasan Hasil Perbaikan */}
+            {(displayMessages.length > 0 || activeItem?.is_resolved) && (
               <div className="pt-2.5 space-y-3 font-sans select-text">
-                {displayMessages.map((msg) => (
-                  msg.text.trim() ? (
-                    <div key={msg.id} className="text-left">
-                      {msg.sender === "user" ? (
-                        <div className="flex justify-end my-1">
-                          <div className="px-3 py-1.5 rounded-2xl bg-white/15 text-white text-[12.5px] leading-relaxed max-w-[85%] font-medium">
-                            {msg.text}
+                {displayMessages.length > 0 ? (
+                  displayMessages.map((msg, idx) => (
+                    msg.text.trim() ? (
+                      <div key={msg.id} className="text-left">
+                        {msg.sender === "user" ? (
+                          <div className="flex justify-end my-1">
+                            <div className="px-3 py-1.5 rounded-2xl bg-white/15 text-white text-[12.5px] leading-relaxed max-w-[85%] font-medium">
+                              {msg.text}
+                            </div>
                           </div>
+                        ) : (
+                          <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[13px] text-white/90 leading-relaxed whitespace-pre-wrap selection:bg-white/20 font-normal">
+                            {msg.text}
+
+                            {/* Tombol kecil & simple clean tidak ada warna apa apa */}
+                            {activeItem?.is_resolved && idx === displayMessages.length - 1 && (
+                              <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between">
+                                <span className="text-[11px] text-white/40">
+                                  Berkas telah diverifikasi normal
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (activeError?.file_path) {
+                                      onClearSingleError?.(activeError.file_path);
+                                    } else {
+                                      onClearError?.();
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/10 text-white/70 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer select-none flex items-center gap-1.5"
+                                  title="Klik atau ketik 'saya paham' untuk kembali standby"
+                                >
+                                  <Check size={11} className="opacity-70" />
+                                  <span>Saya paham</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : null
+                  ))
+                ) : (
+                  /* Fallback chat bubble jika item sudah selesai diperbaiki */
+                  <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[13px] text-white/90 leading-relaxed whitespace-pre-wrap font-normal">
+                    <p>
+                      Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error:{" "}
+                      <code className="text-[12px] bg-white/[0.06] px-1.5 py-0.5 rounded text-white/90">
+                        {activeError.raw_message}
+                      </code>
+                    </p>
+                    {activeExplanation?.why_it_happened && (
+                      <div className="mt-2.5 pt-2 border-t border-white/[0.06]">
+                        <div className="text-[11.5px] font-medium text-white/60 mb-1">
+                          Pembahasan Masalah & Penyebab:
                         </div>
-                      ) : (
-                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[13px] text-white/90 leading-relaxed whitespace-pre-wrap selection:bg-white/20 font-normal">
-                          {msg.text}
-                        </div>
-                      )}
+                        <p className="text-[12.5px] text-white/80">
+                          {activeExplanation.why_it_happened}
+                        </p>
+                      </div>
+                    )}
+                    <p className="mt-2 text-[12px] text-white/60">
+                      Berkas kode telah diperbaiki dan diverifikasi bebas dari error sintaks.
+                    </p>
+                    <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between">
+                      <span className="text-[11px] text-white/40">
+                        Berkas telah diverifikasi normal
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (activeError?.file_path) {
+                            onClearSingleError?.(activeError.file_path);
+                          } else {
+                            onClearError?.();
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/10 text-white/70 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer select-none flex items-center gap-1.5"
+                        title="Klik atau ketik 'saya paham' untuk kembali standby"
+                      >
+                        <Check size={11} className="opacity-70" />
+                        <span>Saya paham</span>
+                      </button>
                     </div>
-                  ) : null
-                ))}
+                  </div>
+                )}
               </div>
             )}
 

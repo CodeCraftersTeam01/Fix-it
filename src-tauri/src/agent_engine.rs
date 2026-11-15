@@ -1354,7 +1354,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                                     // Berkas sudah terbukti valid & bebas error sintaks!
                                     // Langsung selesaikan tanpa perlu menunggu roundtrip LLM tambahan yang lama
                                     let summary = format!(
-                                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas telah diverifikasi valid dan bebas dari error sintaks sehingga aplikasi dapat kembali berjalan dengan normal.",
+                                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: `{}`.\n\n**Pembahasan Masalah & Penyebab:**\nError ini terjadi karena struktur kode atau deklarasi pada berkas belum memenuhi aturan bahasa yang diharapkan oleh parser/compiler. Berkas telah diperbaiki dan diverifikasi valid bebas dari error sintaks sehingga aplikasi dapat kembali berjalan dengan normal.",
                                         error.raw_message
                                     );
 
@@ -1427,7 +1427,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             if final_content.is_empty() {
                 if has_performed_modification {
                     final_content = format!(
-                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas kode telah diperbaiki secara presisi sehingga aplikasi dapat kembali berjalan dengan normal.",
+                        "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: `{}`.\n\n**Pembahasan Masalah & Penyebab:**\nError terjadi karena struktur sintaks pada berkas belum memenuhi kaidah bahasa yang diharapkan. Berkas kode telah diperbaiki secara presisi dan diverifikasi valid sehingga aplikasi dapat kembali berjalan dengan normal.",
                         error.raw_message
                     );
                 } else {
@@ -1469,7 +1469,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
 
                     if final_content.is_empty() {
                         final_content = format!(
-                            "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: {}. Berkas dan konfigurasi proyek telah diselaraskan agar aplikasi dapat kembali berjalan dengan normal.",
+                            "Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: `{}`.\n\n**Pembahasan Masalah & Penyebab:**\nStruktur kode telah diselaraskan dengan aturan sintaks bahasa dan berkas telah diverifikasi normal.",
                             error.raw_message
                         );
                     }

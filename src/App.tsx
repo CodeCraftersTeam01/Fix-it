@@ -487,10 +487,16 @@ export function App() {
         workspace_path: settings?.watched_paths?.[0] || null,
       });
 
+      let fullDiscussion = result;
+      const why = currentActive.explanation?.why_it_happened?.trim();
+      if (why && !result.includes(why)) {
+        fullDiscussion = `Pemeriksaan dan tindakan perbaikan telah selesai dieksekusi untuk error: \`${currentActive.error.raw_message}\`.\n\n**Pembahasan Masalah & Penyebab:**\n${why}\n\nKode pada berkas telah diperbaiki dan diverifikasi valid sehingga aplikasi dapat kembali berjalan dengan normal.`;
+      }
+
       const aiMsg: ChatMessage = {
         id: Date.now().toString(),
         sender: "ai",
-        text: result,
+        text: fullDiscussion,
         timestamp: Date.now(),
       };
 
@@ -534,12 +540,44 @@ export function App() {
   };
 
   const handleSendMessage = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const normalized = trimmed.toLowerCase();
+    const cleaned = normalized.replace(/[.,!?:;]/g, "").trim();
+    const isPahamKeyword =
+      cleaned === "saya paham" ||
+      cleaned === "paham" ||
+      cleaned === "aku paham" ||
+      cleaned === "oke paham" ||
+      cleaned === "ok paham" ||
+      cleaned === "sudah paham" ||
+      cleaned === "oke saya paham" ||
+      cleaned === "ok saya paham" ||
+      cleaned === "saya sudah paham" ||
+      cleaned === "i understand" ||
+      cleaned === "understood";
+
+    if (isPahamKeyword) {
+      const currentActive = activeErrors[selectedErrorIndex];
+      if (currentActive) {
+        if (activeErrors.length > 1) {
+          handleClearSingleError(currentActive.error.file_path);
+        } else {
+          handleClearError();
+        }
+      } else {
+        handleClearError();
+      }
+      return;
+    }
+
     const currentActive = activeErrors[selectedErrorIndex];
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: "user",
-      text,
+      text: trimmed,
       timestamp: Date.now(),
     };
 

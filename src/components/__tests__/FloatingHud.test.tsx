@@ -417,8 +417,8 @@ describe("FloatingHud standby reset", () => {
     expect(onSelectError).toHaveBeenCalledWith(1);
 
     // The resolved message text appears for the active resolved item
-    expect(screen.getByText("Perbaikan selesai • Kode berhasil diperbaiki")).toBeTruthy();
-    const understandBtn = screen.getByText("Oke, saya paham");
+    expect(screen.getByText("Perbaikan Selesai • Berkas Normal")).toBeTruthy();
+    const understandBtn = screen.getByText("Saya paham");
     expect(understandBtn).toBeTruthy();
   });
 
