@@ -85,28 +85,7 @@ export const getProviderConnectionCount = (p: AIProvider): number => {
 };
 
 const INITIAL_PROVIDERS: AIProvider[] = [
-  // 1. Custom Provider
-  {
-    id: "ciora",
-    name: "Ciora",
-    category: "custom",
-    protocol: "openai",
-    base_url: "https://ciora.id/v1",
-    api_keys: ["sk-c89127398127367e5"],
-    active_model: "glm-5.3-flash-free",
-    badge: "Chat",
-    available_models: [
-      { id: "glm-5.3-flash-free", name: "glm-5.3-flash-free", description: "Model cepat & cerdas dari Ciora" },
-      { id: "nvidia/nemotron-3.5-super-v1-free", name: "nvidia/nemotron-3.5-super-v1-free", description: "Super v1 free dari Ciora" },
-      { id: "ciora-vision-free", name: "ciora-vision-free", description: "Vision multimodal gratis" },
-      { id: "cohere/north-mini-code-free", name: "cohere/north-mini-code-free", description: "Spesialis koding & refactoring" },
-      { id: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "nvidia/nemotron-3-ultra-550b:free", description: "Reasoning ultra parameter" },
-      { id: "liquid/lfm-2.5-2.6b-free", name: "liquid/lfm-2.5-2.6b-free", description: "Model ringkas hemat latensi" },
-      { id: "ciora-coding-free", name: "ciora-coding-free", description: "Code assistant gratis" },
-    ],
-  },
-
-  // 2. Default Providers (Major AI Industry Leaders)
+  // Default Providers (Major AI Industry Leaders)
   {
     id: "openai",
     name: "OpenAI",
@@ -1008,94 +987,101 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {customProvidersList.map((cp) => {
-                        const count = getProviderConnectionCount(cp);
-                        const hasConnection = count > 0;
-                        const isGlobalActive = activeProviderId === cp.id;
+                    {customProvidersList.length === 0 ? (
+                      <div className="p-5 rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.01] text-center text-white/35 text-xs py-7 font-mono flex flex-col items-center justify-center gap-1">
+                        <span className="text-white/50">Belum ada custom provider</span>
+                        <span className="text-[11px] text-white/25">Klik "+ Tambah" jika ingin menghubungkan endpoint AI kustom Anda sendiri.</span>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {customProvidersList.map((cp) => {
+                          const count = getProviderConnectionCount(cp);
+                          const hasConnection = count > 0;
+                          const isGlobalActive = activeProviderId === cp.id;
 
-                        return (
-                          <div
-                            key={cp.id}
-                            onClick={() => setSelectedProviderId(cp.id)}
-                            className={`p-4 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-3 group relative border shadow-sm ${
-                              isGlobalActive
-                                ? "bg-white/[0.06] border-white/20 ring-1 ring-white/10"
-                                : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.04] hover:border-white/15"
-                            }`}
-                          >
-                            {/* Baris Atas: Info Provider & Tombol Aksi */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2.5 min-w-0 pr-1">
-                                <div
-                                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                                    isGlobalActive
-                                      ? "bg-white/15 text-white border-white/20"
-                                      : "bg-white/[0.05] text-white/70 border-white/[0.05] group-hover:text-white"
-                                  }`}
-                                >
-                                  {renderProviderLogo(cp, "w-4 h-4")}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[13px] font-semibold text-white/90 group-hover:text-white truncate">
-                                      {cp.name}
-                                    </span>
-                                    {isGlobalActive && (
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/15 text-white font-mono font-medium border border-white/20">
-                                        AKTIF
+                          return (
+                            <div
+                              key={cp.id}
+                              onClick={() => setSelectedProviderId(cp.id)}
+                              className={`p-4 rounded-2xl transition cursor-pointer flex flex-col justify-between gap-3 group relative border shadow-sm ${
+                                isGlobalActive
+                                  ? "bg-white/[0.06] border-white/20 ring-1 ring-white/10"
+                                  : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.04] hover:border-white/15"
+                              }`}
+                            >
+                              {/* Baris Atas: Info Provider & Tombol Aksi */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                                  <div
+                                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                                      isGlobalActive
+                                        ? "bg-white/15 text-white border-white/20"
+                                        : "bg-white/[0.05] text-white/70 border-white/[0.05] group-hover:text-white"
+                                    }`}
+                                  >
+                                    {renderProviderLogo(cp, "w-4 h-4")}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[13px] font-semibold text-white/90 group-hover:text-white truncate">
+                                        {cp.name}
                                       </span>
-                                    )}
+                                      {isGlobalActive && (
+                                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/15 text-white font-mono font-medium border border-white/20">
+                                          AKTIF
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-white/40 font-mono uppercase tracking-wider mt-0.5 truncate">
+                                      {cp.protocol} COMPATIBLE
+                                    </div>
                                   </div>
-                                  <div className="text-[10px] text-white/40 font-mono uppercase tracking-wider mt-0.5 truncate">
-                                    {cp.protocol} COMPATIBLE
-                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteProvider(cp.id, e)}
+                                    className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-red-500/15 text-white/30 hover:text-red-400 flex items-center justify-center transition cursor-pointer"
+                                    title={`Hapus ${cp.name}`}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteProvider(cp.id, e)}
-                                  className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-red-500/15 text-white/30 hover:text-red-400 flex items-center justify-center transition cursor-pointer"
-                                  title={`Hapus ${cp.name}`}
+                              {/* Baris Bawah: Status Koneksi & Model Info */}
+                              <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono gap-2">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {testStatus[cp.id] ? (
+                                    renderTestStatusBadge(testStatus[cp.id])
+                                  ) : hasConnection ? (
+                                    <>
+                                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
+                                      <span className="text-white/60">
+                                        {count} Connected
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0"></span>
+                                      <span className="text-white/30">0 Connected (Offline)</span>
+                                    </>
+                                  )}
+                                </div>
+
+                                <div
+                                  className="text-[10.5px] text-white/40 group-hover:text-white/70 transition truncate max-w-[130px] text-right font-mono"
+                                  title={cp.active_model || "Tanpa model"}
                                 >
-                                  <Trash2 size={13} />
-                                </button>
+                                  {cp.active_model || "Tanpa model"}
+                                </div>
                               </div>
                             </div>
-
-                            {/* Baris Bawah: Status Koneksi & Model Info */}
-                            <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono gap-2">
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {testStatus[cp.id] ? (
-                                  renderTestStatusBadge(testStatus[cp.id])
-                                ) : hasConnection ? (
-                                  <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0"></span>
-                                    <span className="text-white/60">
-                                      {count} Connected
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0"></span>
-                                    <span className="text-white/30">0 Connected (Offline)</span>
-                                  </>
-                                )}
-                              </div>
-
-                              <div
-                                className="text-[10.5px] text-white/40 group-hover:text-white/70 transition truncate max-w-[130px] text-right font-mono"
-                                title={cp.active_model || "Tanpa model"}
-                              >
-                                {cp.active_model || "Tanpa model"}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Section 2: Default Providers */}

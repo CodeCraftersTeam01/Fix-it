@@ -42,31 +42,7 @@ fn default_active_provider() -> String {
 }
 
 fn default_custom_providers() -> Vec<CustomProvider> {
-    vec![CustomProvider {
-        id: "ciora".to_string(),
-        name: "Ciora".to_string(),
-        protocol: "openai".to_string(),
-        base_url: "https://ciora.id/v1".to_string(),
-        api_keys: vec!["sk-c89127398127367e5".to_string()],
-        active_model: "glm-5.3-flash-free".to_string(),
-        available_models: vec![
-            ProviderModel {
-                id: "glm-5.3-flash-free".to_string(),
-                name: "glm-5.3-flash-free".to_string(),
-                description: Some("Model glm-5.3-flash-free dari Ciora".to_string()),
-            },
-            ProviderModel {
-                id: "nvidia/nemotron-3.5-super-v1-free".to_string(),
-                name: "nvidia/nemotron-3.5-super-v1-free".to_string(),
-                description: Some("Model nvidia/nemotron-3.5-super-v1-free dari Ciora".to_string()),
-            },
-            ProviderModel {
-                id: "ciora-vision-free".to_string(),
-                name: "ciora-vision-free".to_string(),
-                description: Some("Model ciora-vision-free dari Ciora".to_string()),
-            },
-        ],
-    }]
+    Vec::new()
 }
 
 impl Default for AppConfig {
@@ -214,6 +190,7 @@ mod tests {
         assert_eq!(config.active_provider, "openai");
         assert_eq!(config.idle_delay_ms, 2500);
         assert!(config.watched_paths.is_empty());
+        assert!(config.custom_providers.is_empty());
     }
 
     #[test]

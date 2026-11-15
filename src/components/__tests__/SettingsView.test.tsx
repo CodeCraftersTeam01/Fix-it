@@ -11,11 +11,17 @@ describe("SettingsView", () => {
     expect(screen.getByText("Tentang FixIt")).toBeTruthy();
   });
 
-  it("renders default providers and custom providers", () => {
+  it("renders the 6 default providers and empty custom providers placeholder by default", () => {
     render(<SettingsView />);
-    // Ciora is displayed in provider cards and active engine pill
-    expect(screen.getAllByText("Ciora").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/OPENAI COMPATIBLE/i).length).toBeGreaterThan(0);
+    // 6 default providers
+    expect(screen.getAllByText("OpenAI").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Anthropic Claude").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Google Gemini").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("DeepSeek AI").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Groq LPU").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("OpenRouter").length).toBeGreaterThan(0);
+    // Custom providers empty by default
+    expect(screen.getByText("Belum ada custom provider")).toBeTruthy();
   });
 
   it("allows switching tabs to Folder Pantauan", () => {
@@ -47,10 +53,29 @@ describe("SettingsView", () => {
 
   it("deletes a custom provider after user confirmation", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<SettingsView />);
-    expect(screen.getAllByText("Ciora").length).toBeGreaterThan(0);
+    const customConfig = {
+      openai_base_url: "https://api.test.com/v1",
+      openai_api_key: "",
+      model_name: "test-model",
+      idle_delay_ms: 2000,
+      watched_paths: [],
+      active_provider: "custom-ai",
+      custom_providers: [
+        {
+          id: "custom-ai",
+          name: "Custom AI",
+          protocol: "openai" as const,
+          base_url: "https://custom.ai/v1",
+          api_keys: ["sk-custom-123"],
+          active_model: "custom-model",
+          available_models: [{ id: "custom-model", name: "custom-model" }],
+        },
+      ],
+    };
+    render(<SettingsView config={customConfig} />);
+    expect(screen.getAllByText("Custom AI").length).toBeGreaterThan(0);
 
-    const deleteBtn = screen.getByTitle("Hapus Ciora");
+    const deleteBtn = screen.getByTitle("Hapus Custom AI");
     fireEvent.click(deleteBtn);
 
     expect(window.confirm).toHaveBeenCalled();
