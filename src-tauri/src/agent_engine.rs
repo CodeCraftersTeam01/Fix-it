@@ -1189,7 +1189,7 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
         }
 
         let mut step_count = 0;
-        let max_steps = 8;
+        let max_steps = 12;
         let mut has_performed_modification = false;
 
         while step_count < max_steps {
@@ -1279,10 +1279,12 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
             if let Some(raw_tool_calls) = msg["tool_calls"].as_array() {
                 let tool_calls = Self::merge_tool_calls(raw_tool_calls);
                 if !tool_calls.is_empty() {
+                    let mut just_modified = false;
                     for call in &tool_calls {
                         let name = call["function"]["name"].as_str().unwrap_or("");
                         if name == "edit_file" || name == "write_file" {
                             has_performed_modification = true;
+                            just_modified = true;
                         }
                     }
 
@@ -1299,12 +1301,72 @@ DISIPLIN PENYELIDIKAN SUPERPOWERS & ECC (HUKUM MUTLAK):
                         &mut messages,
                     )
                     .await;
+
+                    // Setelah modifikasi dilakukan, verifikasi berkas error apakah masih ada syntax error
+                    if just_modified {
+                        let err_file = Self::resolve_path(&root, &error.file_path);
+                        if err_file.exists() {
+                            let inspect_res = crate::diagnostics::DiagnosticsParser::inspect_file(&err_file);
+                            match inspect_res {
+                                crate::diagnostics::InspectionResult::Error(remaining) => {
+                                    if step_count < max_steps {
+                                        messages.push(serde_json::json!({
+                                            "role": "user",
+                                            "content": format!(
+                                                "Perhatian: Setelah perbaikan dieksekusi, linter/parser masih mendeteksi error sintaks pada berkas: '{}' di baris {:?}. Silakan periksa kembali dan panggil tool `edit_file` lagi untuk memperbaiki kode tersebut sampai benar-benar tuntas.",
+                                                remaining.raw_message,
+                                                remaining.line_number
+                                            )
+                                        }));
+                                    }
+                                }
+                                crate::diagnostics::InspectionResult::Valid => {
+                                    messages.push(serde_json::json!({
+                                        "role": "user",
+                                        "content": "Pemeriksaan sintaks berhasil! Berkas telah diverifikasi valid dan bebas dari error sintaks. Sekarang berikan ringkasan perbaikan singkat dan cerdas dalam bahasa Indonesia untuk siswa."
+                                    }));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
                     continue;
                 }
             }
 
-            // If no tool calls, model gave the final answer
+            // If no tool calls, model gave a text response
             let mut final_content = msg["content"].as_str().unwrap_or("").trim().to_string();
+
+            // PENTING: Jika model belum pernah memanggil edit_file/write_file untuk memperbaiki error,
+            // DAN masih ada sisa steps: JANGAN LANGSUNG BERHENTI!
+            if !has_performed_modification && step_count < max_steps {
+                if let Some(app) = app_handle {
+                    let _ = app.emit(
+                        "fixit-agent-step",
+                        AgentStepEvent {
+                            step: step_count * 1000 + 1,
+                            step_type: "thinking".to_string(),
+                            tool_name: None,
+                            tool_args: None,
+                            result_summary: Some("Thinking".to_string()),
+                            message: Some(final_content.clone()),
+                            output: Some(final_content.clone()),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                        },
+                    );
+                }
+
+                messages.push(msg.clone());
+                messages.push(serde_json::json!({
+                    "role": "user",
+                    "content": "Temuan dan analisis Anda sudah tepat. SEGERA PANGGIL tool `edit_file(path, target, replacement)` sekarang juga untuk melakukan perbaikan nyata pada berkas! JANGAN hanya berkata 'Mari saya perbaiki' di teks tanpa memanggil tool `edit_file`."
+                }));
+                continue;
+            }
 
             // Jika respons akhir kosong setelah memanggil tools, minta ringkasan eksplisit dengan timeout cepat
             if final_content.is_empty() {
