@@ -5,10 +5,12 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
 
 jobs:
   build-windows:
-    name: Build Windows (x64)
+    name: Build Windows (.exe Installer)
     runs-on: windows-latest
 
     steps:
@@ -30,17 +32,16 @@ jobs:
       - name: Build Windows Installer
         run: npx tauri build
 
-      - name: Upload Windows Executable & Installer
+      - name: Upload Windows Standalone Installer (.exe)
         uses: actions/upload-artifact@v4
         with:
           name: FixIt-Windows-Installer
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/fixit.exe
 
   build-macos:
-    name: Build macOS (Apple Silicon & Intel)
+    name: Build macOS (.dmg Installer)
     runs-on: macos-latest
 
     steps:
@@ -59,13 +60,42 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm install
 
-      - name: Build macOS App & DMG
+      - name: Build macOS DMG
         run: npx tauri build
 
-      - name: Upload macOS App & DMG
+      - name: Upload macOS Disk Image (.dmg)
         uses: actions/upload-artifact@v4
         with:
-          name: FixIt-macOS-Bundle
-          path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
+          name: FixIt-macOS-DMG
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+
+  publish-release:
+    name: Publish GitHub Release (Direct DMG & EXE)
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: FixIt-Windows-Installer
+          path: windows-release
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: FixIt-macOS-DMG
+          path: macos-release
+
+      - name: Publish Direct Installers to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            windows-release/*.exe
+            macos-release/*.dmg
+          draft: false
+          prerelease: false
+          generate_release_notes: true
