@@ -110,12 +110,12 @@ impl SmartIdleWatcher {
                             continue;
                         }
 
-                        // Only watch supported code files (PHP, Python, JS/TS/JSX/TSX, Rust, Go, Java, C/C++, JSON)
+                        // Only watch supported code files (PHP, Python, JS/TS/JSX/TSX, Rust, Go, Java, C/C++, JSON, HTML, Vue, Svelte, SQL, CSS)
                         let is_code = path.extension().map_or(false, |ext| {
                             let e = ext.to_string_lossy().to_lowercase();
                             matches!(
                                 e.as_str(),
-                                "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "json" | "rs" | "go" | "java" | "c" | "cpp"
+                                "php" | "py" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "json" | "rs" | "go" | "java" | "c" | "cpp" | "html" | "htm" | "vue" | "svelte" | "sql" | "css"
                             )
                         });
                         if !is_code {

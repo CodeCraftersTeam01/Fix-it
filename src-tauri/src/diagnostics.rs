@@ -517,6 +517,106 @@ try {
                 }
                 InspectionResult::Unsupported
             }
+            "html" | "htm" | "vue" | "svelte" => {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    // 1. Extract and check <script> tags
+                    let script_re = Regex::new(r"(?is)<script\b([^>]*)>(.*?)</script>").ok();
+                    if let Some(re) = script_re {
+                        for caps in re.captures_iter(&content) {
+                            let attrs = caps.get(1).map_or("", |m| m.as_str());
+                            // Skip external scripts (<script src="...">) or JSON scripts
+                            if attrs.contains("src=")
+                                || attrs.contains("type=\"application/json\"")
+                                || attrs.contains("type=\"application/ld+json\"")
+                            {
+                                continue;
+                            }
+                            if let Some(script_match) = caps.get(2) {
+                                let script_code = script_match.as_str();
+                                if script_code.trim().is_empty() {
+                                    continue;
+                                }
+                                // Calculate starting line number by counting newlines before this script content
+                                let pre_script = &content[..script_match.start()];
+                                let line_offset = pre_script.chars().filter(|&c| c == '\n').count();
+
+                                // Check script syntax using Node.js vm.Script
+                                let check_script = r#"
+const fs = require('fs');
+const vm = require('vm');
+const lineOffset = parseInt(process.argv[1], 10) || 0;
+const code = fs.readFileSync(0, 'utf8');
+try {
+  new vm.Script(code, { lineOffset });
+  process.exit(0);
+} catch (e) {
+  let line = lineOffset + 1;
+  if (e.stack) {
+    const m = e.stack.match(/:(\d+)(?::\d+)?\n/);
+    if (m) line = parseInt(m[1], 10);
+  }
+  console.log(JSON.stringify({ error: e.message || 'SyntaxError', line }));
+  process.exit(1);
+}
+"#;
+                                if let Ok(mut child) = std::process::Command::new("node")
+                                    .args(["-e", check_script, &line_offset.to_string()])
+                                    .stdin(std::process::Stdio::piped())
+                                    .stdout(std::process::Stdio::piped())
+                                    .stderr(std::process::Stdio::null())
+                                    .spawn()
+                                {
+                                    use std::io::Write;
+                                    if let Some(mut stdin) = child.stdin.take() {
+                                        let _ = stdin.write_all(script_code.as_bytes());
+                                    }
+                                    if let Ok(out) = child.wait_with_output() {
+                                        if !out.status.success() {
+                                            let stdout = String::from_utf8_lossy(&out.stdout);
+                                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                                                if let Some(err_text) = v.get("error").and_then(|s| s.as_str()) {
+                                                    let line = v.get("line").and_then(|l| l.as_u64()).map(|l| l as usize);
+                                                    return InspectionResult::Error(CodeError {
+                                                        file_path: path_str,
+                                                        line_number: line,
+                                                        error_type: "SyntaxError".to_string(),
+                                                        raw_message: err_text.to_string(),
+                                                        snippet: Self::extract_snippet(path, line),
+                                                        project_name: proj_name,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Check for unclosed <script> tag if developer is currently writing a script block
+                    let open_scripts = content.matches("<script").count();
+                    let close_scripts = content.matches("</script>").count();
+                    if open_scripts > close_scripts {
+                        let line = content
+                            .lines()
+                            .enumerate()
+                            .filter(|(_, l)| l.contains("<script"))
+                            .last()
+                            .map(|(idx, _)| idx + 1);
+                        return InspectionResult::Error(CodeError {
+                            file_path: path_str,
+                            line_number: line,
+                            error_type: "ParseError".to_string(),
+                            raw_message: "Tag <script> belum ditutup dengan </script>".to_string(),
+                            snippet: Self::extract_snippet(path, line),
+                            project_name: proj_name,
+                        });
+                    }
+
+                    return InspectionResult::Valid;
+                }
+                InspectionResult::Unsupported
+            }
             _ => InspectionResult::Unsupported,
         }
     }
@@ -619,6 +719,58 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(syntax_err_path);
+    }
+
+    #[test]
+    fn test_inspect_file_html_script_error() {
+        let temp_dir = std::env::temp_dir();
+        let html_err_path = temp_dir.join("fixit_test_html_err.html");
+        let html_content = r#"<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+  <h1>Hello</h1>
+  <script>
+    function broken() {
+      messageDiv.innerHTML = '<div class="err
+    }
+  </script>
+</body>
+</html>"#;
+        std::fs::write(&html_err_path, html_content).unwrap();
+
+        let result = DiagnosticsParser::inspect_file(&html_err_path);
+        match result {
+            InspectionResult::Error(err) => {
+                assert_eq!(err.error_type, "SyntaxError");
+                assert_eq!(err.line_number, Some(8));
+                assert!(err.snippet.is_some());
+            }
+            other => panic!("Expected InspectionResult::Error, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_file(html_err_path);
+    }
+
+    #[test]
+    fn test_inspect_file_html_valid() {
+        let temp_dir = std::env::temp_dir();
+        let html_valid_path = temp_dir.join("fixit_test_html_valid.html");
+        let html_content = r#"<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+  <script>
+    console.log("valid code");
+  </script>
+</body>
+</html>"#;
+        std::fs::write(&html_valid_path, html_content).unwrap();
+
+        let result = DiagnosticsParser::inspect_file(&html_valid_path);
+        assert_eq!(result, InspectionResult::Valid);
+
+        let _ = std::fs::remove_file(html_valid_path);
     }
 }
 
