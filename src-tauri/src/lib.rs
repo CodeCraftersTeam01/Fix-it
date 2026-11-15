@@ -351,7 +351,9 @@ pub mod commands {
     pub async fn start_interactive_screenshot(
         app: tauri::AppHandle,
     ) -> Result<Option<CapturedScreenResult>, String> {
+        #[cfg(target_os = "macos")]
         use std::process::Command;
+        #[cfg(target_os = "macos")]
         use base64::Engine;
 
         let path = "/tmp/fixit_capture.png";
