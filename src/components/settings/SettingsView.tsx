@@ -861,7 +861,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
             <span>Active Service</span>
           </div>
-          <span className="font-mono text-[10px]">v0.1.0</span>
+          <span className="font-mono text-[10px]">v0.1.1-beta</span>
         </div>
       </aside>
 
@@ -1690,7 +1690,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Asisten praktikum pemrograman untuk mahasiswa. Didesain seringan mungkin, hemat token, tanpa bloatware AI slop, dan beroperasi tenang di latar belakang sistem macOS.
               </p>
               <div className="pt-2 font-mono text-[11px] text-white/35 space-y-1">
-                <div>Versi: 0.1.0 Native aarch64 (Apple Silicon)</div>
+                <div>Versi: 0.1.1-beta Native aarch64 (Apple Silicon)</div>
                 <div>Runtime: Tauri v2 + React 19 + Rust</div>
                 <div>Lisensi: MIT - Free for Students</div>
               </div>

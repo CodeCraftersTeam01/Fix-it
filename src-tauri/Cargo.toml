@@ -1,6 +1,6 @@
 [package]
 name = "fixit"
-version = "0.1.0"
+version = "0.1.1-beta"
 description = "Smart Desktop Assistant for Programming Students"
 authors = ["Lanvry", "CS-Orion"]
 edition = "2021"
