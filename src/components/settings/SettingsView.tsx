@@ -15,6 +15,7 @@ import {
   RefreshCw,
   AlertCircle,
   ArrowLeft,
+  Globe,
 } from "lucide-react";
 import { AppSettings, AIProvider, ProviderModel, CustomProvider } from "./types";
 
@@ -1558,6 +1559,54 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   >
                     + Tambah Folder
                   </button>
+                </div>
+              </div>
+
+              {/* Pemantau Konsol Website & Browser */}
+              <div className="p-5 rounded-2xl bg-white/[0.025] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Globe size={15} className="text-emerald-400" />
+                    <div className="text-[13px] font-medium text-white/85">Pemantau Konsol Website & Browser</div>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Port 45678 Aktif
+                  </span>
+                </div>
+                <div className="text-[11px] text-white/40 leading-relaxed">
+                  FixIt memantau error JavaScript runtime (<span className="font-mono text-white/60">console.error</span>, <span className="font-mono text-white/60">unhandledrejection</span>, crash) di browser seperti Chrome, Safari, dan Zen Browser. Notifikasi sistem akan dibunyikan dan jendela floating HUD langsung muncul.
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <div className="text-[11px] font-medium text-white/70">Opsi 1: Pasang Tag Script di File HTML</div>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 text-xs font-mono">
+                    <span className="text-white/80 select-all truncate mr-2">&lt;script src="http://127.0.0.1:45678/fixit.js"&gt;&lt;/script&gt;</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUrl('<script src="http://127.0.0.1:45678/fixit.js"></script>')}
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[11px] text-white/80 flex items-center gap-1 shrink-0 cursor-pointer transition"
+                    >
+                      <Copy size={11} /> Salin Tag
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1 border-t border-white/[0.04]">
+                  <div className="text-[11px] font-medium text-white/70">Opsi 2: Otomatis di Browser (Tampermonkey / Violentmonkey)</div>
+                  <div className="text-[11px] text-white/40">
+                    Pasang Userscript sekali saja agar otomatis memonitor seluruh proyek di <span className="font-mono text-white/60">localhost</span> dan <span className="font-mono text-white/60">127.0.0.1</span> tanpa perlu mengubah file HTML sama sekali:
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 text-xs font-mono">
+                    <span className="text-emerald-400/90 select-all truncate mr-2">http://127.0.0.1:45678/fixit.user.js</span>
+                    <a
+                      href="http://127.0.0.1:45678/fixit.user.js"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[11px] text-white/80 flex items-center gap-1 shrink-0 cursor-pointer transition no-underline"
+                    >
+                      <ExternalLink size={11} /> Pasang Script
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>

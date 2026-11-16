@@ -927,34 +927,153 @@ impl DebounceCache {
     }
 }
 
-pub fn crash_info_to_code_error(
+pub fn resolve_url_to_local_file(
+    url_or_path: &str,
+    watched_paths: &[String],
+) -> (String, Option<String>) {
+    if url_or_path.starts_with("http://") || url_or_path.starts_with("https://") {
+        let without_scheme = if let Some(stripped) = url_or_path.strip_prefix("http://") {
+            stripped
+        } else if let Some(stripped) = url_or_path.strip_prefix("https://") {
+            stripped
+        } else {
+            url_or_path
+        };
+
+        // Split host and path
+        let path_part = without_scheme
+            .split_once('/')
+            .map(|(_, rest)| rest)
+            .unwrap_or(without_scheme);
+        let clean_path = path_part
+            .split('?')
+            .next()
+            .unwrap_or(path_part)
+            .split('#')
+            .next()
+            .unwrap_or(path_part);
+        let trimmed_path = clean_path.trim_start_matches('/');
+        let file_name = std::path::Path::new(trimmed_path)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(trimmed_path);
+
+        // 1. Check in supplied watched_paths
+        for w in watched_paths {
+            let wp = std::path::Path::new(w);
+            let candidate = wp.join(trimmed_path);
+            if candidate.exists() {
+                let proj = wp
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Website".to_string());
+                return (candidate.to_string_lossy().to_string(), Some(proj));
+            }
+
+            let direct_candidate = wp.join(file_name);
+            if direct_candidate.exists() {
+                let proj = wp
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Website".to_string());
+                return (direct_candidate.to_string_lossy().to_string(), Some(proj));
+            }
+
+            if let Ok(entries) = std::fs::read_dir(wp) {
+                for entry in entries.flatten() {
+                    let sub_cand = entry.path().join(file_name);
+                    if sub_cand.exists() {
+                        let proj = wp
+                            .file_name()
+                            .map(|f| f.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "Website".to_string());
+                        return (sub_cand.to_string_lossy().to_string(), Some(proj));
+                    }
+                }
+            }
+        }
+
+        // 2. Also check all discovered IDE workspaces
+        let discovered = AppConfig::discover_ide_workspaces();
+        for d in discovered {
+            let dp = std::path::Path::new(&d);
+            let cand = dp.join(trimmed_path);
+            if cand.exists() {
+                let proj = dp
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Website".to_string());
+                return (cand.to_string_lossy().to_string(), Some(proj));
+            }
+            let direct = dp.join(file_name);
+            if direct.exists() {
+                let proj = dp
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Website".to_string());
+                return (direct.to_string_lossy().to_string(), Some(proj));
+            }
+            if let Ok(entries) = std::fs::read_dir(dp) {
+                for entry in entries.flatten() {
+                    let sub_cand = entry.path().join(file_name);
+                    if sub_cand.exists() {
+                        let proj = dp
+                            .file_name()
+                            .map(|f| f.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "Website".to_string());
+                        return (sub_cand.to_string_lossy().to_string(), Some(proj));
+                    }
+                }
+            }
+        }
+
+        (url_or_path.to_string(), Some("Website".to_string()))
+    } else {
+        let p = std::path::Path::new(url_or_path);
+        let project_name = p
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .map(|parent| parent.to_string_lossy().to_string());
+        (url_or_path.to_string(), project_name)
+    }
+}
+
+pub fn crash_info_to_code_error_with_watched(
     crash_info: &runtime_parser::RuntimeCrashInfo,
+    watched_paths: &[String],
 ) -> diagnostics::CodeError {
+    let (resolved_file_path, project_name) =
+        resolve_url_to_local_file(&crash_info.file_path, watched_paths);
+
     let line_number = if crash_info.line_number > 0 {
         Some(crash_info.line_number as usize)
     } else {
         None
     };
 
-    let p = std::path::Path::new(&crash_info.file_path);
-    let snippet = crash_info
-        .snippet
-        .clone()
-        .or_else(|| diagnostics::DiagnosticsParser::extract_snippet(p, line_number));
-
-    let project_name = p
-        .parent()
-        .and_then(|parent| parent.file_name())
-        .map(|parent| parent.to_string_lossy().to_string());
+    let p = std::path::Path::new(&resolved_file_path);
+    let snippet = crash_info.snippet.clone().or_else(|| {
+        if p.exists() {
+            diagnostics::DiagnosticsParser::extract_snippet(p, line_number)
+        } else {
+            None
+        }
+    });
 
     diagnostics::CodeError {
-        file_path: crash_info.file_path.clone(),
+        file_path: resolved_file_path,
         line_number,
         error_type: crash_info.error_type.clone(),
         raw_message: crash_info.message.clone(),
         snippet,
         project_name,
     }
+}
+
+pub fn crash_info_to_code_error(
+    crash_info: &runtime_parser::RuntimeCrashInfo,
+) -> diagnostics::CodeError {
+    crash_info_to_code_error_with_watched(crash_info, &[])
 }
 
 pub async fn resolve_file_error(app_handle: &AppHandle, file_path: &str) {
@@ -1004,6 +1123,30 @@ pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics
             return;
         }
         flood_guard::FloodAction::LoopThrottled { hit_count } => {
+            let is_browser_error = err.file_path.starts_with("http://")
+                || err.file_path.starts_with("https://")
+                || err.error_type == "ConsoleError"
+                || err.error_type == "TypeError"
+                || err.error_type.contains("Promise");
+
+            let notif_title = if is_browser_error {
+                "FixIt: Error Berulang di Website"
+            } else {
+                "FixIt: Error Berulang Terdeteksi"
+            };
+
+            let notif_body = format!(
+                "Loop/pengulangan error {}x: {} pada berkas {}",
+                hit_count, err.error_type, file_name
+            );
+
+            let _ = app_handle
+                .notification()
+                .builder()
+                .title(notif_title)
+                .body(&notif_body)
+                .show();
+
             // Rapid repeat / loop detected: Do NOT call AI again!
             let record = if let Some(existing) = state.get_error_for_file(&err.file_path).await {
                 state
@@ -1031,23 +1174,46 @@ pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics
 
             if let Some(win) = app_handle.get_webview_window("main") {
                 let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_always_on_top(true);
+                let _ = win.set_focus();
             }
         }
         flood_guard::FloodAction::ProcessFresh => {
-            let editor = detect_active_ide();
+            let is_browser_error = err.file_path.starts_with("http://")
+                || err.file_path.starts_with("https://")
+                || err.error_type == "ConsoleError"
+                || err.error_type == "TypeError"
+                || err.error_type == "UnhandledPromiseRejection"
+                || err.error_type.contains("Promise");
+
+            let editor = if is_browser_error {
+                "Browser Console".to_string()
+            } else {
+                detect_active_ide()
+            };
+
             let line_str = err
                 .line_number
                 .map(|l| format!(" di baris {}", l))
                 .unwrap_or_default();
+
+            // Sesuai permintaan user: Untuk error/bug website lebih utama gunakan notifikasi sistem & langsung show popup HUD
+            let notif_title = if is_browser_error {
+                "FixIt: Error Terdeteksi di Website"
+            } else {
+                "FixIt: Ada Error Terdeteksi"
+            };
+
             let notif_body = format!(
-                "Ditemukan {}{} pada berkas {}",
-                err.error_type, line_str, file_name
+                "Ditemukan {}{} pada berkas {}\nPesan: {}",
+                err.error_type, line_str, file_name, err.raw_message
             );
 
             let _ = app_handle
                 .notification()
                 .builder()
-                .title("FixIt: Ada Error Terdeteksi")
+                .title(notif_title)
                 .body(&notif_body)
                 .show();
 
@@ -1063,8 +1229,11 @@ pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics
                 }),
             );
 
+            // LANGSUNG SHOW & FOCUS POPUP HUD FLOATING
             if let Some(win) = app_handle.get_webview_window("main") {
                 let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_always_on_top(true);
                 let _ = win.set_focus();
             }
 
@@ -1096,6 +1265,9 @@ pub async fn process_and_emit_error(app_handle: &AppHandle, mut err: diagnostics
 
             if let Some(win) = app_handle.get_webview_window("main") {
                 let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_always_on_top(true);
+                let _ = win.set_focus();
             }
         }
     }
@@ -1387,12 +1559,17 @@ pub fn run() {
             let _ = setup_tray(app.handle());
             setup_background_service(&app.handle().clone(), &initial_config, Arc::clone(&debounce_cache));
 
-            // Pipeline 2: Local Loopback Ingestion on 127.0.0.1:45678
+            // Pipeline 2: Local Loopback Ingestion on 127.0.0.1:45678 (Console & Website Crash Ingestion)
             let app_for_endpoint = app.handle().clone();
             runtime_endpoint::start_loopback_reporter(45678, move |crash_info| {
-                let code_error = crash_info_to_code_error(&crash_info);
                 let app_inner = app_for_endpoint.clone();
                 tauri::async_runtime::spawn(async move {
+                    let watched = {
+                        let state: tauri::State<AppState> = app_inner.state();
+                        let conf = state.config.lock().await;
+                        conf.watched_paths.clone()
+                    };
+                    let code_error = crash_info_to_code_error_with_watched(&crash_info, &watched);
                     process_and_emit_error(&app_inner, code_error).await;
                 });
             });
@@ -1635,5 +1812,32 @@ mod tests {
         assert!(!path_matches("SuperUser.php", "/path/to/User.php"));
         assert!(!path_matches("/path/to/User.php", "SuperUser.php"));
         assert!(!path_matches("", "User.php"));
+    }
+
+    #[test]
+    fn test_resolve_url_to_local_file_with_watched_paths() {
+        let temp_dir = std::env::temp_dir().join(format!("fixit_test_web_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+        let public_dir = temp_dir.join("public");
+        let _ = std::fs::create_dir_all(&public_dir);
+        let index_file = public_dir.join("index.html");
+        let _ = std::fs::write(&index_file, "<html><body><h1>Hello</h1></body></html>");
+
+        let watched = vec![temp_dir.to_string_lossy().to_string()];
+
+        // 1. Full URL with port and query
+        let (resolved, proj) = resolve_url_to_local_file("http://127.0.0.1:5500/public/index.html?token=123", &watched);
+        assert_eq!(resolved, index_file.to_string_lossy().to_string());
+        assert!(proj.is_some());
+
+        // 2. Direct filename
+        let (resolved2, _) = resolve_url_to_local_file("http://localhost:3000/index.html", &watched);
+        assert_eq!(resolved2, index_file.to_string_lossy().to_string());
+
+        // 3. Unknown URL falls back to original with "Website" project
+        let (resolved_unknown, proj_unknown) = resolve_url_to_local_file("https://cdn.example.com/vendor.js", &watched);
+        assert_eq!(resolved_unknown, "https://cdn.example.com/vendor.js");
+        assert_eq!(proj_unknown, Some("Website".to_string()));
+
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 }
